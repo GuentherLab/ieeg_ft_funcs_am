@@ -105,8 +105,8 @@ for i_eltype = 1:n_eltypes % handle each electrode type
     for iblock = 1:ntrials_raw
         D_hg_eltype{i_eltype}.trial{iblock} = mean(normed_pow{iblock},3);
         
-% % % % % % % % % % % % %         % multiply the [channel/block]-specific median powers back, to differentiate between absolute power values of channels
-% % % % % % % % % % % % %         D_hg_eltype{i_eltype}.trial{iblock} = D_hg_eltype.trial{iblock} .* med_pow_mean(:,iblock); 
+        % multiply the [channel/block]-specific median powers back, to differentiate between absolute power values of channels
+        D_hg_eltype{i_eltype}.trial{iblock} = D_hg_eltype.trial{iblock} .* med_pow_mean(:,iblock); 
     end
     clear D_multifreq_eltype normed_pow
 end

@@ -1,8 +1,11 @@
 %% currently only working with Triplet
 
-function P08_detect_artifact_criteria_E(SUBJECT, param)
+function P08A09_detect_artifact_criteria_E(SUBJECT, param)
 
 %%% Detect artifacts.... for use with vibration-denoised data
+% protocol P08 in Pitt data, protocol A09 in MGH data
+%%%% before running this function, run P08A09_highgamma_from_denoised to extract trialwise high gamma
+%%%%.... these trials will be concatenated in this script before performing artifact detection
 
 % creates an artifact annotation table
 

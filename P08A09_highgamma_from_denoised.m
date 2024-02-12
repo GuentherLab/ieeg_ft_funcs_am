@@ -1,6 +1,9 @@
 %% currently only working with Triplet
 
-function P08_highgamma_from_denoised(SUBJECT, param)
+function P08A09_highgamma_from_denoised(SUBJECT, param)
+% protocol P08 in Pitt data, protocol A09 in MGH data
+
+
 % AM 2022/11/2
 
 % compute high gamma (averaged across 70-150hz) from vibration-denoised trialwise data....

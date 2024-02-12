@@ -62,10 +62,13 @@ end
 D_avg_pow_eltype = struct; % averaged high gamma
     D_avg_pow_eltype.hdr = D_multifreq_eltype{1}.hdr;
     D_avg_pow_eltype.trial = D_multifreq_eltype{1}.trial;
-    D_avg_pow_eltype.sampleinfo = D_multifreq_eltype{1}.sampleinfo;
     D_avg_pow_eltype.trial = cell(1,ntrials); % to be filled
     D_avg_pow_eltype.time = D_multifreq_eltype{1}.time;
     D_avg_pow_eltype.label = D_multifreq_eltype{1}.label;
+    if isfield(D_multifreq_eltype{1},'sampleinfo')
+        D_avg_pow_eltype.sampleinfo = D_multifreq_eltype{1}.sampleinfo;
+    end
+    
 % get averaged high gamma
 for iblock = 1:ntrials
     D_avg_pow_eltype.trial{iblock} = mean(normed_pow{iblock},3);
