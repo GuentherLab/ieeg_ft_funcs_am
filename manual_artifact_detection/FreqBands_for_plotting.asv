@@ -110,7 +110,7 @@ for i=1:length(triplet_subjects)
 end
 
 %% SMSL loop
-%for n=1:length(SMSL_subjects)
+%for i=1:length(SMSL_subjects)
     %SUBJECT = char(SMSL_subjects(i)); 
     SUBJECT = 'sub-DM1005';
     disp(SUBJECT);
@@ -126,7 +126,6 @@ end
     tempname = load([PATH_FT filesep filename]);
     FT_file = tempname.D;
 
-    % computes trial start and end time
     %annot = readtable([PATH_ANNOT filesep SUBJECT '_ses-intraop_task-smsl_annot-trials.tsv'],'FileType','text','Delimiter','\t');
     annot = readtable([PATH_ANNOT filesep SUBJECT '_ses-intraop_task-smsl_annot-produced-syllables.tsv'],'FileType','text','Delimiter','\t');
     trial_startend(:,1) = annot.audio_onset(:) - 0.5;
@@ -146,13 +145,11 @@ end
     D_wavtransf.label = FT_file.label;
     D_wavtransf.hdr = FT_file.hdr;
     D_wavtransf.time = FT_file.time;
-    D_wavtransf.fsample = FT_file.fsample;
-    D_wavtransf.trial = {};
+    D_wavtransf.
 
     freqs = 10.^(linspace(0,2.5,20)); % number of frequencies: 20
-    D_wavtransf.trial{1,1} = zeros([186,103424,length(freqs)]);
     for ifreq = 1:length(freqs)
-        thisfreq = freqs(ifreq);
+        thisfreq = freqs(ifreq)
         cfg=[];
         cfg.out_freq = 100;
         cfg.wav_freq = thisfreq;
@@ -161,12 +158,7 @@ end
         temp = bml_envelope_wavpow(cfg,FT_file);
         %D_wavtransf{ifreq} = bml_envelope_wavpow(cfg,FT_file); 
 
-        %D_wavtransf.trial(:,:,ifreq) = temp.trial;
-        for iD = 1:186
-            for jD = 1:103424
-                D_wavtransf.trial{1,1}(iD,jD,ifreq) = temp.trial{1,1}(iD,jD);
-            end
-        end
+        D_wavtransf.trial(:,:,ifreq) = temp.trial;
         D_wavtransf.cfg = temp.cfg;
         D_wavtransf.cfg = rmfield(D_wavtransf.cfg,'wav_freq');
     end
@@ -174,7 +166,6 @@ end
     % break up into trials
     numFreq = length(freqs);
 
-    % do I need the continuous variable anymore?
     continuous = cell(1,numFreq);
     for j = 1:numFreq
         continuous{1,j} = struct('time','trial');
@@ -213,19 +204,10 @@ end
     end
     
     disp('breaking up into trials');
-    
-    %trialed = cell(1,numFreq);
-    trialed = struct('label','trial','time','cfg','hdr','fsample');
-    trialed.label = D_wavtransf.label;
-    trialed.trial = {};
-    trialed.time = {};
-    trialed.cfg = D_wavtransf.cfg;
-    trialed.hdr = D_wavtransf.hdr;
-    trialed.fsample = D_wavtransf.fsample;
+    trialed = cell(1,numFreq);
     % loop through each frequency
     for n = 1:numFreq
         % copy other data stored in the table to the new variable (basically not .time and .trial)
-        %{
         trialed{1,n} = struct('label','trial','time','cfg','hdr','fsample');
         trialed{1,n}.label = D_wavtransf{1,n}.label;
         trialed{1,n}.trial = {};
@@ -233,7 +215,6 @@ end
         trialed{1,n}.cfg = D_wavtransf{1,n}.cfg;
         trialed{1,n}.hdr = D_wavtransf{1,n}.hdr;
         trialed{1,n}.fsample = D_wavtransf{1,n}.fsample;
-        %}
         
         % paste the data into the new table under the correct trial number
         % run through each trial
