@@ -106,7 +106,7 @@ cfg.trials = trials;
 [~, trials_ft_no_overlap] = P08_correct_fieldtrip_trialtable_discrepancies(cfg,D_hg_trial_no_overlap); % remake trials_ft in case some trials got removed
 sestab = table(session_ids, nan(nses,1), nan(nses,1), nan(nses,1), 'VariableNames', {'session_id', 'starts', 'ends', 'duration'}); 
 for ises = 1:nses
-    trialmatch = find(trials_ft_no_overlap.session_id == session_ids(ises)); % row indices
+    trialmatch = find(trials_ft.session_id == session_ids(ises)); % row indices
     sestab.starts(ises) = D_hg_trial_no_overlap.time{trialmatch(1)}(1); % start of the first trial of this session
     sestab.ends(ises) = D_hg_trial_no_overlap.time{trialmatch(end)}(end); % end of the last trial of this session
     times_pre_interp  = cell2mat(D_hg_trial_no_overlap.time(trialmatch));
