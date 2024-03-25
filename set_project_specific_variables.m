@@ -3,12 +3,16 @@
 % ... and then set paths and other variables appropriate to that site
 %%%% implemented as script rather than function so that these vars will be put directly into workspace 
 
+%% a lot of the paths that get set below can be replaced by calling setpaths_dbs_triplet and setpaths_dbs_seq
+
 SUBJECT=op.sub;
 proj_str = regexprep(SUBJECT, '[0-9]', ''); % string that will tell us what project / collection site this subject is from
 ARTIFACT_CRIT = op.art_crit;
 
 switch proj_str
     case 'DBS' % Pitt
+        setpaths_dbs_triplet()
+
         DATE=datestr(now,'yyyymmdd');
         PATH_DATA='Z:\DBS';
         PATH_SUBJECT=[PATH_DATA filesep SUBJECT];
@@ -48,11 +52,11 @@ switch proj_str
         epoch = bml_annot_table(epoch);
 
     case 'DM' % MGH
+        setpaths_dbs_seq()
+    
         SESSION = 'intraop';
         TASK = 'smsl'; 
         
-        PATH_DATASET = 'Y:\DBS';
-        PATH_DER = [PATH_DATASET filesep 'derivatives'];
         PATH_DER_SUB = [PATH_DER filesep 'sub-' SUBJECT];  
         PATH_PREPROC = [PATH_DER_SUB filesep 'preproc'];
         PATH_ANNOT = [PATH_DER_SUB filesep 'annot'];
@@ -64,7 +68,6 @@ switch proj_str
         PATH_TRIAL_AUDIO_INTRAOP_GO = [PATH_TRIAL_AUDIO filesep 'ses-', SESSION, '_go-trials'];
         PATH_TRIAL_AUDIO_INTRAOP_STOP = [PATH_TRIAL_AUDIO filesep 'ses-', SESSION, '_stop-trials']; 
         
-        PATH_SRC = [PATH_DATASET filesep 'sourcedata'];
         PATH_SRC_SUB = [PATH_SRC filesep 'sub-' SUBJECT];  
         PATH_SRC_SESS = [PATH_SRC_SUB filesep 'ses-' SESSION]; 
         PATH_AUDIO = [PATH_SRC_SESS filesep 'audio']; 

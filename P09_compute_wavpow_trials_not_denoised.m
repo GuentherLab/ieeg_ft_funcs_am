@@ -1,12 +1,11 @@
-%% this script should be replaced by P09_compute_wavpow_trials_not_denoised.m.... which is the more general form, for use with other bands as well as high gamma
 
-% get high gamma timecourses for each trial, using high gamma definition from artifact criterion E
+% get wavelet-transformed power timecourses for each trial, using freq bands definitions from artifact criterion E
 % 
-% run this script after common average rereferencing has been performed
+% run this script after artifact detection and common average rereferencing has been performed
 %
 % AM 
 
-function P09_compute_high_gamma_trials_not_denoised(op)
+function P09_compute_wavpow_trials_not_denoised(op)
 
 % Loading packages
 ft_defaults
@@ -15,16 +14,17 @@ format long
 
 %% Defining paths, loading artifact parameters
 vardefault('op',struct); % initialize options if not present
-op.art_crit = 'E';  % 'E' = 70-250hz high gamma
+field_default('op','art_crit','E');  %  % 'E' = 70-250hz high gamma; 'F' = beta
+field_default('op','resp_signal','hg'); 
 field_default('op','sub','DM1007')
-field_default('op','out_freq',100); % downsample rate in hz for high gamma traces
+field_default('op','out_freq',100); % downsample rate in hz
 
 set_project_specific_variables(); % set paths etc. based on data collection site
 
-fieldtrip_savename = [FT_FILE_PREFIX 'hg-trial-ar-ref-E_not-denoised.mat'];
+fieldtrip_savename = [FT_FILE_PREFIX, op.resp_signal, '-trial-ar-ref-', op.art_crit, '_not-denoised.mat'];
 
 % % % Load FieldTrip raw data - artifact-masked and rereferenced
-load([FT_FILE_PREFIX 'raw-filt-trial-ar-ref-', ARTIFACT_CRIT, '_not-denoised.mat']);
+load([FT_FILE_PREFIX 'raw-filt-trial-ar-ref-', op.art_crit, '_not-denoised.mat']);
 ntrials_raw = numel(D_trial_ref.trial);
 
 %remasking nans with zeros
@@ -55,9 +55,9 @@ end
 % combine electrode types
 cfg = [];
 D_avgpow_eltype = D_avgpow_eltype(~cellfun(@isempty,D_avgpow_eltype)); % delete empty rows
-D_hg = ft_appenddata(cfg, D_avgpow_eltype{:});
+D_wavpow = ft_appenddata(cfg, D_avgpow_eltype{:});
 
-save(fieldtrip_savename, 'D_hg','-v7.3');
+save(fieldtrip_savename, 'D_wavpow', '-v7.3');
 
 
 

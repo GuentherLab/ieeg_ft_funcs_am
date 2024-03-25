@@ -37,7 +37,7 @@ D=bml_mask(cfg,D);
 artparam_default = artparam(artparam.subject == "default",:);
 artparam_subject = artparam(strcmp(artparam.subject,SUBJECT),:);
 if ~isempty(artparam_subject)
-artparam = bml_annot_rowbind(artparam_default(~ismember(artparam_default.name,artparam_subject.name),:),artparam_subject);
+    artparam = bml_annot_rowbind(artparam_default(~ismember(artparam_default.name,artparam_subject.name),:),artparam_subject);
 end
 
 %% Applying High Pass Filter
