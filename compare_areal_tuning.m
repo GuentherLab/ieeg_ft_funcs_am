@@ -105,12 +105,13 @@ if show_barplot
     hyline = yline(alpha);
     set(0, 'DefaultTextInterpreter', 'none')
     titlestr = [full_param_string, '..... p = ' num2str(chi_p)] ;
-    htitle = title(titlestr); 
+%     htitle = title(titlestr); 
 
     hbar.FaceColor = bar_face_color; 
 
 end
 
+box off
 ylabel('fraction of electrodes tuned')
 
 hold off
