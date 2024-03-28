@@ -1,5 +1,6 @@
 # ieeg_ft_funcs_am
- Andrew Meier's scripts for artifact masking and processing raw fieldtrip data into freq bands of interest
+Scripts for artifact masking and processing raw fieldtrip data into freq bands of interest
+-scripts by Andrew Meier and Anita Kelcher
 
 Contains common code for projects including DBS-Triplet, DBS-SEQ
 
