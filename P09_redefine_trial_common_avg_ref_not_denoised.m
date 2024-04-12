@@ -11,10 +11,11 @@ format long
 
 %% Defining paths, loading artifact parameters
 vardefault('op',struct); % initialize options if not present
-field_default('op','sub','DM1007')
+field_default('op','sub','DM1005')
 field_default('op','art_crit','E'); % 'E' = 70-250hz high gamma; 'F' = beta; 'G' = other Rohan criterion? 
 field_default('op','do_high_pass_filter','yes'); % should a high pass filter be applied
     field_default('op','high_pass_filter_freq',1); %cutoff frequency of high pass filter, if one is to be used
+field_default('op','rereference_method','CTAR'); 
 field_default('op','out_freq',100); % downsample rate in hz for high gamma traces
 
 % use the following trial duration if one is not specified in the trials annot table
@@ -108,12 +109,16 @@ D_sel_filt_trial_mask = bml_mask(cfg,D_sel_filt_trial);
 
 el_ecog = electrodes(electrodes.type=="ECOG" | electrodes.type=="ecog",:);
 
-cfg=[];
-cfg.label = el_ecog.name;
-cfg.group = el_ecog.connector;
-cfg.method = 'CTAR'; %using trimmed average referencing
-cfg.percent = 50; %percentage of 'extreme' channels in group to trim 
-D_sel_filt_trial_mask_ref = bml_rereference(cfg,D_sel_filt_trial_mask);
+if strcmp(op.rereference_method,'none') % no referencing
+    D_sel_filt_trial_mask_ref = D_sel_filt_trial_mask;
+elseif ~strcmp(op.rereference_method,'none')
+    cfg=[];
+    cfg.label = el_ecog.name;
+    cfg.group = el_ecog.connector;
+    cfg.method = op.rereference_method; % 
+    cfg.percent = 50; %percentage of 'extreme' channels in group to trim 
+    D_sel_filt_trial_mask_ref = bml_rereference(cfg,D_sel_filt_trial_mask);
+end
 
 
 % % % Adding unfiltered channels
@@ -135,7 +140,7 @@ D_trial_ref = D_sel_filt_trial_mask_ref;
 
 % % % Saving referenced data
 % this section used to saved an annot table file called ['annot/' SUBJECT '_trial_epoch.txt'] from epoch variable... AM removed it 2024/02/05 because it appeared unnecessary and confusing
-save([FT_FILE_PREFIX 'raw-filt-trial-ar-ref-', ARTIFACT_CRIT, '_not-denoised.mat'],'D_trial_ref','-v7.3');
+save([FT_FILE_PREFIX 'raw-filt-trial_ar-',op.art_crit, '_ref-',op.rereference_method,  '_not-denoised.mat'],'D_trial_ref','-v7.3');
 
 % % % Quality check - visually inspect the data
 

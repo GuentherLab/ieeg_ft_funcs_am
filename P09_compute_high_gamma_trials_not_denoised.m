@@ -16,7 +16,7 @@ format long
 %% Defining paths, loading artifact parameters
 vardefault('op',struct); % initialize options if not present
 op.art_crit = 'E';  % 'E' = 70-250hz high gamma
-field_default('op','sub','DM1007')
+field_default('op','sub','DM1005')
 field_default('op','out_freq',100); % downsample rate in hz for high gamma traces
 
 set_project_specific_variables(); % set paths etc. based on data collection site

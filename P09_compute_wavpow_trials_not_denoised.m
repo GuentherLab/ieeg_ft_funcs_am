@@ -16,15 +16,15 @@ format long
 vardefault('op',struct); % initialize options if not present
 field_default('op','art_crit','E');  %  % 'E' = 70-250hz high gamma; 'F' = beta
 field_default('op','resp_signal','hg'); 
-field_default('op','sub','DM1007')
+field_default('op','sub','DM1005')
 field_default('op','out_freq',100); % downsample rate in hz
 
 set_project_specific_variables(); % set paths etc. based on data collection site
 
-fieldtrip_savename = [FT_FILE_PREFIX, op.resp_signal, '-trial-ar-ref-', op.art_crit, '_not-denoised.mat'];
+fieldtrip_savename = [FT_FILE_PREFIX, op.resp_signal, '-trial_ar-',op.art_crit, '_ref-',op.rereference_method,  '_not-denoised.mat'];
 
 % % % Load FieldTrip raw data - artifact-masked and rereferenced
-load([FT_FILE_PREFIX 'raw-filt-trial-ar-ref-', op.art_crit, '_not-denoised.mat']);
+load([FT_FILE_PREFIX 'raw-filt-trial_ar-',op.art_crit, '_ref-',op.rereference_method,  '_not-denoised.mat']);
 ntrials_raw = numel(D_trial_ref.trial);
 
 %remasking nans with zeros

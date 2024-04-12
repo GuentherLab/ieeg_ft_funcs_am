@@ -5,9 +5,12 @@
 
 %% a lot of the paths that get set below can be replaced by calling setpaths_dbs_triplet and setpaths_dbs_seq
 
+
+vardefault('op',struct);
+field_default('op','subj','DBS3012');
+field_default('op','art_crit','E'); % default to high gamma 
 SUBJECT=op.sub;
 proj_str = regexprep(SUBJECT, '[0-9]', ''); % string that will tell us what project / collection site this subject is from
-ARTIFACT_CRIT = op.art_crit;
 
 switch proj_str
     case 'DBS' % Pitt
@@ -18,19 +21,19 @@ switch proj_str
         PATH_SUBJECT=[PATH_DATA filesep SUBJECT];
         PATH_DER_SUB = [PATH_SUBJECT filesep 'Preprocessed Data']; % subject-specific derivatives
         PATH_SYNC = [PATH_DER_SUB filesep 'Sync'];
-        PATH_ART_PROTOCOL = 'Z:\DBS\Batch\P08_artifact_criteria_E';
+        PATH_ART_PROTOCOL = ['Z:\DBS\Batch\P08_artifact_criteria_', op.art_crit];
         PATH_ANNOT = [PATH_SYNC '/annot']; 
         PATH_FIELDTRIP = [PATH_DER_SUB filesep 'FieldTrip'];
         
         % filepath and filename for saving artifact info into subject-specific annot folder
-        ARTIFACT_FILENAME_SUB = [PATH_ANNOT filesep SUBJECT '_artifact_criteria_', ARTIFACT_CRIT, '_not-denoised.txt']; 
+        ARTIFACT_FILENAME_SUB = [PATH_ANNOT filesep SUBJECT '_artifact_criteria_', op.art_crit, '_not-denoised.txt']; 
        
         % string (including filepath) at beginning of all fieldtrip filenames for this subj
         FT_FILE_PREFIX = [PATH_FIELDTRIP, filesep, SUBJECT, '_ft_'];
 
         FT_RAW_FILENAME = [FT_FILE_PREFIX 'raw_session.mat']; 
         
-        artparam = readtable([PATH_ART_PROTOCOL, filesep, 'artifact_', ARTIFACT_CRIT , '_params.txt'],'FileType','text');
+        artparam = readtable([PATH_ART_PROTOCOL, filesep, 'artifact_', op.art_crit , '_params.txt'],'FileType','text');
         session= bml_annot_read([PATH_ANNOT filesep SUBJECT '_session.txt']);
         electrodes = bml_annot_read([PATH_ANNOT filesep SUBJECT '_electrode.txt']);
             electrodes.name = electrodes.electrode; % match the table variable name used in dbs-seq
@@ -82,7 +85,8 @@ switch proj_str
         FT_RAW_FILENAME = [FT_FILE_PREFIX 'raw.mat']; 
         
         PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', ARTIFACT_CRIT];
-        
+        PATH_FIGURES = [PATH_ART_PROTOCOL filesep 'figures']; 
+
         artparam = readtable([PATH_ART_PROTOCOL, filesep, 'artifact_', ARTIFACT_CRIT , '_params.tsv'],'FileType','text');
         session= bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' SUBJECT '_sessions.tsv']);
 
@@ -97,10 +101,12 @@ switch proj_str
         % for dbs-seq/smsl, we will use experimenter keypress for trial start/end times
         %%%%% this means no trial overlap, but generally a large time buffer before cue onset and after speech offset
         epoch = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' SUBJECT '_ses-' SESSION '_task-' TASK '_annot-trials.tsv']);
+    otherwise
+        error('Could not identify project from subject name')
 end
 
 % common variables
-PATH_FIGURES = [PATH_ART_PROTOCOL filesep 'figures']; 
+
 
 
 
