@@ -7,7 +7,7 @@
 
 
 vardefault('op',struct);
-field_default('op','subj','DBS3012');
+field_default('op','subj','DBS3012'); % triplet subject
 field_default('op','art_crit','E'); % default to high gamma 
 SUBJECT=op.sub;
 proj_str = regexprep(SUBJECT, '[0-9]', ''); % string that will tell us what project / collection site this subject is from
@@ -15,6 +15,8 @@ proj_str = regexprep(SUBJECT, '[0-9]', ''); % string that will tell us what proj
 switch proj_str
     case 'DBS' % Pitt
         setpaths_dbs_triplet()
+
+        TASK = 'triplet'; 
 
         DATE=datestr(now,'yyyymmdd');
         PATH_DATA='Z:\DBS';
