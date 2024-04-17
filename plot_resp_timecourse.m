@@ -1,44 +1,26 @@
  %%%% plot the timecourse and SD of an electrode's response
- % load preprocessed trialwise data and run resp_types.m first
- %
- % align all trialwise responses to speech onset
- %
+ %%%% .... optionally sort trials by specific conditions 
+ %%%% .... responses will be time-locked to a particular timepoint (e.g. speech onset)
+ % 
+ % this script is intended by be called by project-specific wrapper scripts, e.g. plot_resp_timecourse_triplet
  
 %% params
 
 vardefault('srt_row', 1);
-
-vardefault('sort_by_trial_cond',0)
-
-% set(0,'DefaultFigureWindowStyle','docked')
-set(0,'DefaultFigureWindowStyle','normal')
-
 vardefault('plot_raster',0); 
-
 
 set_project_specific_variables()
 
-switch TASK
-    case 'smsl'
-        vardefault('sort_cond','learn_con');
-
-    case 'triplet'
-
-    otherwise 
-        error('unknown task')
-end
-
 channame = srt.chan{srt_row};
 thissub = srt.sub{srt_row};
-
-resprow = strcmp(resp.chan,channame) & strcmp(resp.sub,thissub);
  
+% remove trials with no response data
+non_empty_trials = ~cellfun(@isempty, timecourses_unaligned);
+trials_tmp = trials_tmp(non_empty_trials,:);
+timecourses_unaligned = timecourses_unaligned(non_empty_trials);
 
 
-
-%% align responses
- % align responses to first syl onset
-
+%% align responses using alignment times provided within trials_tmp by the wrapper function
 subind = string(subs.subject)==thissub; 
 
 ntrials = height(trials_tmp);
@@ -49,15 +31,12 @@ ntrials = height(trials_tmp);
  
  samp_period = 1e-5 * round(1e5 * diff(trials_tmp.times{1}(1:2))); % sampling interval
  
- %%% find trial lengths pre- and post-onset
-    %%%% trials.times{itrial} use global time coordinates
-    %%%% ....... start at a fixed baseline window before stim onset
-    %%%% ....... end at a fixed time buffer after speech offset
+ %%% find trial lengths pre- and post- the alignment time
 for itrial = 1:ntrials
-    % n timepoints before or at speech onset [time from beginning of pre-stim baseline to speech onset]
-    trials_tmp.tpoints_pre_onset(itrial) = nnz(trials_tmp.times{itrial} <= trials_tmp.t_prod_on(itrial,1)); 
-    % n timepoints after speech onset [time from voice onset to end of post-speech time buffer]
-    trials_tmp.tpoints_post_onset(itrial) = nnz(trials_tmp.times{itrial} > trials_tmp.t_prod_on(itrial,1)); 
+    % n timepoints before or at align_time
+    trials_tmp.tpoints_pre_onset(itrial) = nnz(trials_tmp.times{itrial} <= trials_tmp.align_time(itrial,1)); 
+    % n timepoints after align_time
+    trials_tmp.tpoints_post_onset(itrial) = nnz(trials_tmp.times{itrial} > trials_tmp.align_time(itrial,1)); 
 end
  
 % pad or cut each trial to fit a specific size, so that we can align and average trials
@@ -98,24 +77,19 @@ resp_align.n_nonnan_trials = sum(~isnan(resp_align.resp)); % number of usable tr
 resp_align.sem = resp_align.std ./ sqrt(resp_align.n_nonnan_trials);
 resp_align.sem_lims = [resp_align.mean + resp_align.sem; resp_align.mean - resp_align.sem]; 
 
-
-%% plotting
 xtime = 0.5 + [linspace(-n_tpoints_pre_fixed, -1, n_tpoints_pre_fixed), linspace(0, n_tpoints_post_fixed-1, n_tpoints_post_fixed)];
 xtime = samp_period * xtime; 
 
+%% plotting
+if newfig
+    hfig = figure('Color',[1 1 1]);
+end
 
-
-% close all
-    %     hfig = figure('Color',[1 1 1]);
-
-if sort_by_trial_cond
-    if isnumeric(unq_conds)
+if ~isempty(sort_cond)
+    [unq_conds, ~, trial_cond_ind] = unique( trial_conds );
+    if isnumeric(unq_conds) % remove NaN condition labels
         [unq_conds, ~, trial_cond_ind] = unq_conds(~isnan(unq_conds));
         unq_conds = cellstr(num2str(unq_conds));
-        trialconds  = strtrim(cellstr(num2str(trials_tmp{:,sort_cond})));
-    else
-        [unq_conds, ~, trial_cond_ind] = unique( trial_conds );
-        trialconds = trials_tmp{:,sort_cond}; 
     end
     nconds = length(unq_conds);
 
@@ -130,15 +104,14 @@ if sort_by_trial_cond
 
     % if grouping val indices not specified, plot them all
     if isempty (condval_inds_to_plot)
-        condval_inds_to_plot = 1:ncondvals;
+        condval_inds_to_plot = 1:nconds;
     end
     nvals_to_plot = length(condval_inds_to_plot); 
 
     % plot error bars
-    %%% plotting error bars separately from means makes it simpler to create legend
     for icond = 1:nconds
         thiscond = unq_conds{icond};
-        resp_rows_match = strcmp(trialconds, thiscond);
+        resp_rows_match = strcmp(trial_conds, thiscond);
         this_cond_resp = resp_align.resp(resp_rows_match,:); % aligned trial timecourses for trials that match this condition label
         this_cond_mean = nanmean(this_cond_resp);
          this_cond_std = std(this_cond_resp, 'omitnan'); % stdev of response timecourses
@@ -148,23 +121,20 @@ if sort_by_trial_cond
         plotinds = this_cond_n_nonnan_trials > 0; % timepoints with computable error bars
 
         if nnz(plotinds) > 0
-            hfill = fill([xtime(plotinds), fliplr(xtime(plotinds))], [this_cond_sem_lims(1,plotinds), fliplr(this_cond_sem_lims(2,plotinds))], [0.8 0.8 0.8]); % standard error
+            lowlims = this_cond_sem_lims(1,plotinds); 
+            uplims = fliplr(this_cond_sem_lims(2,plotinds));
+            if smooth_timecourses
+                lowlims = smoothdata(lowlims, 2, smooth_method, smooth_windowsize); 
+                uplims = smoothdata(uplims, 2, smooth_method, smooth_windowsize); 
+            end
+
+            hfill = fill([xtime(plotinds), fliplr(xtime(plotinds))], [lowlims,uplims], [0.8 0.8 0.8], 'HandleVisibility','off'); % standard error
             hfill.LineStyle = 'none'; % no border
     
             hfill.EdgeColor = [0.8 0.8 0.8]; 
        end
        hold on
     end
-
-
-    % % % % % % % % plot means.... code originally for dbsseq version of function
-    % % % % % % % for icond = 1:nconds
-    % % % % % % %     thiscond = unq_conds{icond};
-    % % % % % % %     resp_rows_match = strcmp(trialconds, thiscond);
-    % % % % % % %     this_cond_resp = resp_align.resp(resp_rows_match,:); % aligned trial timecourses for trials that match this condition label
-    % % % % % % %     this_cond_mean = nanmean(this_cond_resp);
-    % % % % % % %     hplot(icond) = plot(xtime, this_cond_mean);
-    % % % % % % % end
 
     timecourses_to_plot = cell2mat(resp_grpd.resp_mean(condval_inds_to_plot,:))';
     if smooth_timecourses
@@ -186,7 +156,7 @@ if sort_by_trial_cond
 
     legend_strs = [repmat({''},nconds,1); unq_conds]; % empty entries match error bars
 
-else
+elseif ~isempty(sort_cond)
 
 
     hold off
