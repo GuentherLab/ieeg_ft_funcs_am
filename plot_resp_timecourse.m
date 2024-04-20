@@ -145,6 +145,10 @@ if ~isempty(sort_cond)
     hax = gca;
     for ival = 1:nvals_to_plot
         hplot(ival).LineWidth = plotops.linewidth;
+        colormap(cmapname)
+        cmap = colormap;
+        colormap_ind = round(size(cmap,1) * ival/nvals_to_plot);
+        hplot(ival).Color = cmap(colormap_ind,:);
     end
 
     xlim(xlimits)

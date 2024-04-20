@@ -1,9 +1,10 @@
 %%%% created trialwise and trial-averaged spectrograms for individual channels
 
-op.sub = 'DBS3012';
-op.art_crit = 'F'; 
-op.tf_rate = 20; %Hz Sampling rate of time frequency plot
-op.tf_foi = round(10.^(0.30:0.05:2.4),2,'signif');
+vardefault('op',struct)
+field_default('op','sub','DBS3012');
+field_default('op','art_crit','F'); 
+field_default('op','tf_rate','20'); %Hz Sampling rate of time frequency plot
+field_default('op','tf_foi',round(10.^(0.30:0.05:2.4),2,'signif'));
 
 set(0,'DefaultFigureWindowStyle','docked')
 

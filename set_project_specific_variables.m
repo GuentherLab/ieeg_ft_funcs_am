@@ -50,6 +50,12 @@ switch proj_str
         epoch.ends = epoch.ends + 2;
         epoch = bml_annot_table(epoch);
 
+        % behavior and stim timing
+        trials_prod_syl = readtable([PATH_ANNOT filesep op.sub '_produced_syllable.txt';]); % load syllable timing info
+        trials_stim_trip = readtable([PATH_ANNOT filesep op.sub '_stimulus_triplet.txt';]); % stim timing info
+        trials_prod_trip = readtable([PATH_ANNOT filesep op.sub '_produced_triplet.txt';]); % speech timing info
+        trials_phon = readtable([PATH_ANNOT filesep op.sub '_produced_phoneme.txt';]); % speech timing info
+
     case 'DM' % MGH
         setpaths_dbs_seq()
     
