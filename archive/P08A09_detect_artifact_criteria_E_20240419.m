@@ -39,6 +39,8 @@ end
 
 %% Loading FieldTrip data 
 load([PATH_SUBJECT filesep 'Preprocessed Data' filesep 'FieldTrip' filesep SUBJECT '_ft_hg_trial_denoised.mat'],'D_hg_trial');
+% load([PATH_SUBJECT filesep 'Preprocessed Data' filesep 'FieldTrip' filesep SUBJECT '_ft_hg_trial_denoised.mat'],'D_wavpow_trial');
+
 
 %   cut out of trialtable all rows for which the vibration-denoised trial is missing
 cfg = []; 

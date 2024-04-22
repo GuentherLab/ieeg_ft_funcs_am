@@ -13,10 +13,6 @@ bml_defaults
 format long
 
 %% Defining paths, loading artifact parameters
-vardefault('op',struct); % initialize options if not present
-field_default('op','art_crit','E');  %  % 'E' = 70-250hz high gamma; 'F' = beta
-field_default('op','resp_signal','hg'); 
-field_default('op','sub','DM1005')
 field_default('op','out_freq',100); % downsample rate in hz
 
 set_project_specific_variables(); % set paths etc. based on data collection site

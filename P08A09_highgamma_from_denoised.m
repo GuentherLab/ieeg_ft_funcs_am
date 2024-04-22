@@ -157,7 +157,7 @@ for idx = 1:height(param)
     med_pow_mean = mean(med_pow,3); % channel/block median powers, averaged across frequencies of interest
     for iblock = 1:nTrials
         D_hg_eltype{idx}.trial{iblock} = mean(normed_pow{iblock},3);
-        % multiply the [channel/block]-specific median powers back, to differentiate between absolute power values of channels and trials
+        %%%% multiply the [channel/block]-specific median powers back, to differentiate between absolute power values of channels and trials
         D_hg_eltype{idx}.trial{iblock} = D_hg_eltype{idx}.trial{iblock} .* med_pow_mean(:,iblock); 
     end
     clear D_multifreq_eltype normed_pow

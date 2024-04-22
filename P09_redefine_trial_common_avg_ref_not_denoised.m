@@ -24,10 +24,10 @@ field_default('op','out_freq',100); % downsample rate in hz for high gamma trace
 field_default('op','default_trialdur_max_if_empty',15);  % sec
 field_default('op','default_iti_if_empty',0.5); % sec
 
-set_project_specific_variables(); % set paths etc. based on data collection site
+set_project_specific_variables(); % set paths etc. based on data collection site, load timing and electrode data
 
-% load timing and electrode data
- artifact = readtable(ARTIFACT_FILENAME_SUB,'FileType','Text','Delimiter','tab');
+% filenamename that we will save rereferenced data into
+ft_savename = [FT_FILE_PREFIX 'raw-filt-trial_ar-',op.art_crit, '_ref-',op.rereference_method,  '_not-denoised.mat']; 
 
 % handle missing trial durations
 for itrial = 1:height(epoch)
@@ -140,7 +140,7 @@ D_trial_ref = D_sel_filt_trial_mask_ref;
 
 % % % Saving referenced data
 % this section used to saved an annot table file called ['annot/' SUBJECT '_trial_epoch.txt'] from epoch variable... AM removed it 2024/02/05 because it appeared unnecessary and confusing
-save([FT_FILE_PREFIX 'raw-filt-trial_ar-',op.art_crit, '_ref-',op.rereference_method,  '_not-denoised.mat'],'D_trial_ref','-v7.3');
+save(ft_savename,'D_trial_ref','-v7.3');
 
 % % % Quality check - visually inspect the data
 

@@ -15,7 +15,7 @@ field_default('op','do_high_pass_filter','yes'); % should a high pass filter be 
     field_default('op','high_pass_filter_freq',1); %cutoff frequency of high pass filter, if one is to be used
 field_default('op','do_bsfilter','yes'); % should a band stop filter be applied
     field_default('op','line_noise_harm_freqs',[60 120 180 240]); % for notch filters for 60hz harmonics, if band stop filter is to be used
-field_default('op','out_freq',100); % downsample rate in hz for high gamma traces
+field_default('op','out_freq',100); % downsample rate in hz
 
 set_project_specific_variables(); % set paths etc. based on data collection site
 
