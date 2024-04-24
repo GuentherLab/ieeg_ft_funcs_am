@@ -53,6 +53,6 @@ non_empty_elc_types = ~cellfun(@isempty,D_wavpow_eltype);
 cfg1 = [];
 D_wavpow_trial = ft_appenddata(cfg1, D_wavpow_eltype{non_empty_elc_types});
 
-save([FT_FILE_PREFIX, op.resp_signal, '_trial_', op.denoise_string, '.mat'],'D_wavpow_trial','-v7.3');
+save([FT_FILE_PREFIX, op.resp_signal, '_trial', op.denoise_string, '.mat'],'D_wavpow_trial','-v7.3');
 
 end

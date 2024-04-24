@@ -97,14 +97,14 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
         % loop to determine onset column
         onset=1;
         while onset<annot{k,2}
-            onset = D_wavtransf.time{1,1}(1,j);
+            onset = continuous_FT.time{1,1}(1,j);
             j=j+1;
         end
         timepoints(k,1) = j;
         
         stop=1;
         while stop<annot{k,3}
-            stop = D_wavtransf.time{1,1}(1,j);
+            stop = continuous_FT.time{1,1}(1,j);
             j=j+1;
         end
         timepoints(k,2) = j;
@@ -143,8 +143,8 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
                 count = count+1;
             end
             %}
-            trialed.trial{1,j} = D_wavtransf.trial{1,1}(:,timepoints(j,1):timepoints(j,2),:);
-            trialed.time{1,j} = D_wavtransf.time{1,1}(:,timepoints(j,1):timepoints(j,2));
+            trialed.trial{1,j} = D_wavtransf.trial;
+            trialed.time{1,j} = time_temp;
         %end
     end
 

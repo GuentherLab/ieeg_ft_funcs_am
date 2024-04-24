@@ -80,9 +80,12 @@ D_wavpow.time = cell(1,nses);
 D_wavpow.fsample = D_wavpow_trial_no_overlap.fsample;
 
 %%% get session start/end times from trial times
+% need to use minimal durations for trials_in argument to P08_correct_fieldtrip_trialtable_discrepancies....
+%      or else trials_in durations will be wider than trials_ft
+trials_starts = trials; trials_starts.ends = trials_starts.starts+1; trials_starts.duration = []; 
 cfg1 = [];
 cfg1.plot_times = 0; 
-cfg1.trials = trials; 
+cfg1.trials = trials_starts; 
 [~, trials_ft_no_overlap] = P08_correct_fieldtrip_trialtable_discrepancies(cfg1,D_wavpow_trial_no_overlap); % remake trials_ft in case some trials got removed
 sestab = table(session_ids, nan(nses,1), nan(nses,1), nan(nses,1), 'VariableNames', {'session_id', 'starts', 'ends', 'duration'}); 
 for ises = 1:nses
