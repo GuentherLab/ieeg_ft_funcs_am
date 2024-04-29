@@ -19,6 +19,7 @@ set_project_specific_variables()
 field_default('op','out_freq',100); % downsample rate in hz
 
 % % % Load FieldTrip raw data - artifact-masked and rereferenced
+fprintf('\n* Computing %s power (reref method=%s; artifact criteria %s) for subject %s...',op.resp_signal, op.rereference_method, op.art_crit, op.sub)
 load([FT_FILE_PREFIX 'raw_filt_trial_ar-',op.art_crit, '_ref-',op.rereference_method, op.denoise_string, '.mat'], 'D_trial_ref');
 ntrials_raw = numel(D_trial_ref.trial);
 

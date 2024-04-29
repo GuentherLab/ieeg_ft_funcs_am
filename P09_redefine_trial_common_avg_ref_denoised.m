@@ -23,6 +23,7 @@ cue_presentation = bml_annot_read([PATH_ANNOT, filesep, op.sub '_cue_presentatio
 
 %%
 % % % Load FieldTrip raw data
+fprintf('\n* Doing rereferencing (method=%s; artifact criteria %s) for subject %s...',op.rereference_method, op.art_crit, op.sub)
 load([FT_FILE_PREFIX 'raw_filt_trial_denoised.mat']);
 
 % % % Selecting electrodes and remasking with zeros instead of NaNs

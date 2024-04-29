@@ -18,6 +18,7 @@ elseif strcmp(op.sub, 'DBS3031')
 end
 
 %% Loading FieldTrip data 
+  fprintf('\n* Finding artifacts (criteria %s) for subject %s...',op.art_crit,op.sub)
 load([FT_FILE_PREFIX, op.resp_signal, '_trial_denoised.mat'],'D_wavpow_trial');
 
 %   cut out of trialtable all rows for which the vibration-denoised trial is missing
@@ -109,7 +110,7 @@ sestab.duration = sestab.ends - sestab.starts;
 %% loading electrode type band table
 
 % get subject-specific artifact criteria
-if ~exist('el_band','var') %%%%%%%%%%%% AM 2024/4/20 not sure what this conditional is for - expose contents and remove if statement? 
+if ~exist('el_band','var') %%%%%%%%%%%% AM 2024/4/20 not sure what this conditional is for - maybe should expose contents and remove if statement? 
   param_default = artparam(artparam.subject == "default",:);
   param_subject = artparam(strcmp(artparam.subject,op.sub),:);
   if ~isempty(param_subject)

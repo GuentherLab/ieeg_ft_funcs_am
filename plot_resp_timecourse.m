@@ -153,20 +153,13 @@ if ~isempty(sort_cond)
         hplot(ival).Color = cmap(colormap_ind,:);
     end
 
-    xlim(xlimits)
-
-    ylimdefault = ylim;
-    if ~isempty(y_ax_hardlims)
-        ylim([max(y_ax_hardlims(1),ylimdefault(1)), min(y_ax_hardlims(2),ylimdefault(2))])
-    end
-
     legend_strs = [repmat({''},nconds,1); unq_conds]; % empty entries match error bars
 
-elseif ~isempty(sort_cond)
+elseif isempty(sort_cond) %%%%% get rid of this conditional..... run the all-conditions option in the segment above
 
 
     hold off
-    hfill = fill([xtime, fliplr(xtime)], [resp_align.sem_lims(1,:), fliplr(resp_align.sem_lims(2,:))], [0.8 0.8 0.8]); % standard error
+    hfill = fill([xtime, fliplr(xtime)], [resp_align.sem_lims(1,:), fliplr(resp_align.sem_lims(2,:))], [0.8 0.8 0.8], 'HandleVisibility','off'); % standard error
 %         hfill.LineStyle = 'none'; % no border
         hfill.EdgeColor = [0.8 0.8 0.8]; 
     hold on 
@@ -176,14 +169,21 @@ elseif ~isempty(sort_cond)
     legend_strs = {''}; 
 end
 
-    xlabel('Time (sec)')
+xlim(xlimits)
+
+ylimdefault = ylim;
+if ~isempty(y_ax_hardlims)
+    ylim([max(y_ax_hardlims(1),ylimdefault(1)), min(y_ax_hardlims(2),ylimdefault(2))])
+end
+
+xlabel('Time (sec)')
 %     ylabel('HG power (normed)')
-    ylabel('normed power')
+ylabel('normed power')
 
-    set(gcf,'Color',[1 1 1])
+set(gcf,'Color',[1 1 1])
 
-    hleg = legend(legend_strs{:},'Interpreter','none');
-    hold off
+hleg = legend(legend_strs{:},'Interpreter','none');
+hold off
 
 
 
