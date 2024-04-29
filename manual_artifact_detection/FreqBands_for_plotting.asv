@@ -71,8 +71,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     numFreq = length(D_wavtransf);
     annot = readtable([PATH_ANNOT filesep SUBJECT '_trial_epoch'],'Delimiter','\t');
 
-    % save continuous (untrialed) data
-    save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands.mat'],'trialed','-v7.3');
+    
 
     % create new table with freqband file.trial and .time stored continuously
     %{
@@ -151,7 +150,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
         %end
     end
 
-    save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands-trial.mat'],'trialed','-v7.3');
+    save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands.mat'],'trialed','-v7.3');
     %save([PATH_FT filesep SUBJECT 'ft_raw_session_test_change-frequency-location.mat'],'trialed','-v7.3');
 %end
 
