@@ -14,7 +14,7 @@ bml_defaults
 format long
 
 %% Definig paths, load annotation tables
-setpaths_dbs_triplet()
+% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % setpaths_dbs_triplet()
 set_project_specific_variables()
 field_default('op','out_freq',100); % downsample rate in hz
 

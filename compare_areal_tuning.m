@@ -86,7 +86,7 @@ expected_sgn_per_region_random = proportion_signficant_overall * areastats.nelc_
 %% plotting
 if show_barplot
 
-    if newfig 
+    if op.newfig 
         hfig = figure('color','w');
     end
     hbar = bar(areastats.prop_sgn);
@@ -112,6 +112,6 @@ if show_barplot
 end
 
 box off
-ylabel('fraction of electrodes tuned')
+ylabel({'fraction of', ['electrodes tuned (' op.resp_signal, ')']})
 
 hold off

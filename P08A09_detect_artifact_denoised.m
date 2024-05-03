@@ -399,5 +399,4 @@ end
 
 % AM changed write-to folder because permissions for sync and annot folders are not available
 bml_annot_write(artifact,ARTIFACT_FILENAME_SUB);
-bml_annot_write(artifact,[PATH_ANNOT, filesep, op.sub '_artifact_criteria_' op.art_crit '_denoised.txt']); % backup copy
 

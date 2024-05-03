@@ -1,4 +1,5 @@
 % Detect artifacts, create an artifact annotation table
+%%%% currently only tested w/ SMSL, not Triplet
 
 function P08A09_detect_artifact_not_denoised(op)
 
@@ -35,12 +36,12 @@ D=bml_mask(cfg,D);
 
 %% loading electrode type band table
 artparam_default = artparam(artparam.subject == "default",:);
-artparam_subject = artparam(strcmp(artparam.subject,SUBJECT),:);
+artparam_subject = artparam(strcmp(artparam.subject,op.sub),:);
 if ~isempty(artparam_subject)
     artparam = bml_annot_rowbind(artparam_default(~ismember(artparam_default.name,artparam_subject.name),:),artparam_subject);
 end
 
-%% Applying High Pass Filter
+%% Applying High Pass Filter and remove 60hz line noise
 cfg=[];
 cfg.hpfilter=op.do_high_pass_filter;
     cfg.hpfreq=op.high_pass_filter_freq;
@@ -52,13 +53,13 @@ cfg.bsfilter = op.do_bsfilter;
 cfg.channel={'ecog_*','macro_*','micro_*','dbs_*'};
 D_hpf = ft_preprocessing(cfg,D);
 
-%% Artifact rejection - ECoG channels 
+%% Artifact rejection
 % iterating over bands and electrode types
 artifact = table();
 hfig = figure();
 for idx = 1:height(artparam)
   
-  fprintf('doing %s %s \n',SUBJECT,artparam.name{idx});
+  fprintf('doing %s %s \n',op.sub,artparam.name{idx});
   pname = strip(artparam.name{idx});
 
     cfg = [];
@@ -122,9 +123,9 @@ for idx = 1:height(artparam)
         %set(gca,'YScale','log')
         title(['session ' num2str(itrial)]);
       end
-      saveas(hfig,[PATH_FIGURES filesep SUBJECT '_' pname '_artifact_env_log10_hist.png'])
+      saveas(hfig,[PATH_FIGURES filesep op.sub '_' pname '_artifact_env_log10_hist.png'])
   elseif isempty(v1)
-      warning(['For electrode type ''', artparam.electrode_type{idx}, ''' (sub ', SUBJECT, '), no timepoints found between low threshold (', ...
+      warning(['For electrode type ''', artparam.electrode_type{idx}, ''' (sub ', op.sub, '), no timepoints found between low threshold (', ...
           num2str(THRESHOLD_FIX(1)), ') and high threshold (', num2str(THRESHOLD_FIX(2)), ')'])
   end
 
@@ -173,7 +174,7 @@ for idx = 1:height(artparam)
           title(E_p.label(pidx));
       end
   end
-  saveas(hfig,[PATH_FIGURES filesep SUBJECT '_' pname '_artifact_crit-', ARTIFACT_CRIT,'_snippets_not_denoised.png'])
+  saveas(hfig,[PATH_FIGURES filesep op.sub '_' pname '_artifact-crit-', op.art_crit, '_snippets', op.denoise_string, '.png'])
 
   
   %consolidating annotations with CONSOLIDATION_TIME_TOLERANCE margin of overlap
@@ -297,7 +298,7 @@ for idx = 1:height(artparam)
   clf(hfig); set(hfig,'Position',[0 0 600 600]);
   cfg.trial_name='session';
   bml_plot_raster(cfg,artifact_5_raw)
-  saveas(hfig,[PATH_FIGURES filesep SUBJECT '_' pname '_artifact_mask_not_denoised.png'])
+  saveas(hfig,[PATH_FIGURES filesep op.sub '_' pname '_artifact-mask_', op.denoise_string, '.png'])
 
   artifact_5.pname = repmat({pname},height(artifact_5),1);
   
@@ -312,7 +313,7 @@ end
 if isfile(ARTIFACT_FILENAME_SUB)
     mkdir([PATH_ANNOT filesep 'archive'])
   copyfile(ARTIFACT_FILENAME_SUB,...
-        [PATH_ANNOT filesep 'archive' filesep SUBJECT '_artifact-criteria-' ARTIFACT_CRIT '_not-denoised_' datestr(now,'yyyymmdd_HHMM') '.tsv'])
+        [PATH_ANNOT filesep 'archive' filesep op.sub '_artifact-criteria-' op.art_crit, op.denoise_string, '_' datestr(now,'yyyymmdd_HHMM') '.tsv'])
 end
 
 writetable(artifact, ARTIFACT_FILENAME_SUB, 'delimiter','\t', 'FileType','text');

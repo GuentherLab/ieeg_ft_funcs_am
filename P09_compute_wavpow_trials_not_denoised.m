@@ -1,9 +1,8 @@
-
 % get wavelet-transformed power timecourses for each trial, using freq bands definitions from artifact criterion E
 % 
 % run this script after artifact detection and common average rereferencing has been performed
 %
-% AM 
+%%%% currently only tested w/ SMSL, not Triplet
 
 function P09_compute_wavpow_trials_not_denoised(op)
 
@@ -13,9 +12,10 @@ bml_defaults
 format long
 
 %% Defining paths, loading artifact parameters
+set_project_specific_variables(); % set paths etc. based on data collection site
+
 field_default('op','out_freq',100); % downsample rate in hz
 
-set_project_specific_variables(); % set paths etc. based on data collection site
 
 fieldtrip_savename = [FT_FILE_PREFIX, op.resp_signal, '-trial_ar-',op.art_crit, '_ref-',op.rereference_method,  '_not-denoised.mat'];
 

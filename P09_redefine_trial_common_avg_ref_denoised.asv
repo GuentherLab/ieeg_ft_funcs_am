@@ -67,7 +67,8 @@ D_sel_filt_trial = bml_redefinetrial(cfg1,D_sel_filt); % D was already in trial 
 
 % % % Masking artifacts and empty electrodes with NaNs for re-referencing
 
-%combining artifacts with empty_electrode table
+%combining artifacts with empty_electrode table.... Pitt only
+%%%%%% delete section? we aren't even using D_sel_trial_mask
 empty_electrode_file = [PATH_ANNOT, filesep, op.sub '_empty_electrode.txt']; 
 if exist('empty_electrode_file', 'file')
     empty_electrode = bml_annot_read();

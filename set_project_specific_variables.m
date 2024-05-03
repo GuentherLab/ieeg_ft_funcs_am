@@ -1,6 +1,6 @@
 % this script should be called by functions within ieeg_ft_funcs_am....
 % ... it will determine which data collection site (Pitt vs. MGH) the subject is from
-% ... and then set paths and other variables appropriate to that site
+% ... and then set paths and other variables appropriate to that site and the subject specified by op.sub
 %%%% implemented as script rather than function so that these vars will be put directly into workspace 
 
 %% a lot of the paths that get set below can be replaced by calling setpaths_dbs_triplet and setpaths_dbs_seq
@@ -45,6 +45,8 @@ switch proj_str
         FT_RAW_FILENAME = [FT_FILE_PREFIX 'raw_session.mat']; 
       
         artparam = readtable([PATH_ARTIFACT, filesep, 'artifact_', op.art_crit, '_params.txt']);
+        clear artparam_file
+
         session= bml_annot_read([PATH_ANNOT filesep op.sub '_session.txt']);
         electrodes = bml_annot_read([PATH_ANNOT filesep op.sub '_electrode.txt']);
             electrodes.name = electrodes.electrode; % match the table variable name used in dbs-seq
@@ -89,10 +91,11 @@ switch proj_str
         
         FT_RAW_FILENAME = [FT_FILE_PREFIX 'raw.mat']; 
         
-        PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', ARTIFACT_CRIT];
+        PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', op.art_crit];
         PATH_FIGURES = [PATH_ART_PROTOCOL filesep 'figures']; 
         
-        artparam = bml_annot_read_tsv([PATH_ARTIFACT, filesep, op.sub, '_artifact_criteria_', op.art_crit, op.denoise_string, '.tsv']); 
+        artparam = bml_annot_read_tsv([PATH_ARTIFACT, filesep, 'artifact_', op.art_crit, '_params.tsv']);
+
         session= bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_sessions.tsv']);
         
         % merge electrode info into one table
@@ -100,9 +103,13 @@ switch proj_str
         channels = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_channels.tsv']); %%%% for connector info
             channels.name = strrep(channels.name,'_Ll','_Lm'); % change name to match naming convention in electrodes table
         [~, ch_ind] = intersect(channels.name, electrodes.name,'stable');
-        electrodes = join(electrodes,channels(ch_ind,{'name','connector'}) ,'keys','name'); %%% add connector info
+        electrodes = join(electrodes,channels(ch_ind,{'name','connector','channel','acquisition_reference'}) ,'keys','name'); %%% add connector info
 
-        % define trial epochs for referencing
+        % add connector labels to macro LFP channels, so we can run CAR and CTAR referencing on them 
+        electrodes.connector(contains(electrodes.channel, 'CMacro_LFP')) = -1; % assign an unused label
+        
+
+        % define trial epochs for rereferencing
         % for dbs-seq/smsl, we will use experimenter keypress for trial start/end times
         %%%%% this means no trial overlap, but generally a large time buffer before cue onset and after speech offset
         epoch = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_task-' TASK '_annot-trials.tsv']);
@@ -115,6 +122,15 @@ if exist(ARTIFACT_FILENAME_SUB, 'file')
     artifact = bml_annot_read(ARTIFACT_FILENAME_SUB);  
 end
 
-
-
-clear proj_str
+% handle missing trial durations
+for itrial = 1:height(epoch)
+    if isnan(epoch.duration(itrial))
+        if ~[itrial == height(epoch)] % if not the last trial
+            epoch.ends(itrial)= min([epoch.starts(itrial) + op.default_trialdur_max_if_empty, epoch.ends(itrial+1) - op.default_iti_if_empty]);
+        elseif itrial == height(epoch) % last trial
+            epoch.ends(itrial)= epoch.starts(itrial) + op.default_trialdur_max_if_empty;
+        end
+        epoch.duration(itrial) = epoch.ends(itrial) - epoch.starts(itrial); 
+    end
+end
+clear itrial proj_str
