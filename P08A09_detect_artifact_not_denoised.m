@@ -298,7 +298,7 @@ for idx = 1:height(artparam)
   clf(hfig); set(hfig,'Position',[0 0 600 600]);
   cfg.trial_name='session';
   bml_plot_raster(cfg,artifact_5_raw)
-  saveas(hfig,[PATH_FIGURES filesep op.sub '_' pname '_artifact-mask_', op.denoise_string, '.png'])
+  saveas(hfig,[PATH_FIGURES filesep op.sub '_' pname '_artifact-mask', op.denoise_string, '.png'])
 
   artifact_5.pname = repmat({pname},height(artifact_5),1);
   

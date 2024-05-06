@@ -2,7 +2,7 @@
 %%% do referencing on fieldtrip data that has already been vibration denoised and annotated for artifacts
 %%% called by e.g. batch_P08_P09_triplet
 
-function P09_redefine_trial_common_avg_ref_denoised(op)
+function P09_redefine_trial_reref(op)
 
 % % % % % Loading packages
 ft_defaults
@@ -23,7 +23,7 @@ ft_savename = [FT_FILE_PREFIX 'raw_filt_trial_ar-',op.art_crit, '_ref-',op.reref
 
 %%
 % % % Load FieldTrip raw data
-fprintf('\n* Doing rereferencing (method=%s; artifact criteria %s) for subject %s...',op.rereference_method, op.art_crit, op.sub)
+fprintf('\n* Doing rereferencing (method = %s; artifact criteria %s) for subject %s...',op.rereference_method, op.art_crit, op.sub)
 
 
 %% for non denosied data, need to load raw fieldtrip here rather than load trialwise data (which is done for denoised).... feed into redefinetrial
@@ -45,18 +45,30 @@ elseif ~op.denoised
     cfg.hpfilttype='but';
     cfg.hpfiltord=5;
     cfg.hpfiltdir='twopass';
-    cfg.bsfilter = op.do_bsfilter;
-        cfg.bsfreq= [op.line_noise_harm_freqs-1; op.line_noise_harm_freqs+1]'; % notch filters for 60hz harmonics
+
+
+
+
+%     cfg.bsfilter = op.do_bsfilter;
+%         cfg.bsfreq= [op.line_noise_harm_freqs-1; op.line_noise_harm_freqs+1]'; % notch filters for 60hz harmonics
+%     
+
+    cfg.bsfilter = 'no'; 
+    cfg.dftfilter='yes';
+    cfg.dftfreq           = [60 120 180 240 300 360 420 480];
+    cfg.dftbandwidth      = [ 1   1   1   1   1   1   1   1];
+    cfg.dftneighbourwidth = [ 2   2   2   2   2   2   2   2];
+
+
     cfg.channel={'ecog_*','macro_*','micro_*','dbs_*'};
     D_filt = ft_preprocessing(cfg,D);
 end
 
 % % % Selecting electrodes and remasking with zeros instead of NaNs
-% % % Some of FieldTrip's functions don't work with NaNs, so we are going to temporary replace NaNs with zeros to avoid issues. 
+% % % Some of FieldTrip's functions don't work with NaNs, so we are going to temporarily replace NaNs with zeros to avoid issues. 
 
 cfg1=[];
 cfg1.channel={'ecog_*','macro_*','micro_*','dbs_*'};
-% % %         cfg.trials = logical([1 1 1 1 0]);
 D_sel_filt = ft_selectdata(cfg1,D_filt);
 
 %% Redefining trials
@@ -67,23 +79,24 @@ D_sel_filt_trial = bml_redefinetrial(cfg1,D_sel_filt); % D was already in trial 
 
 % % % Masking artifacts and empty electrodes with NaNs for re-referencing
 
-%combining artifacts with empty_electrode table.... Pitt only
-%%%%%% delete section? we aren't even using D_sel_trial_mask
+%combining artifacts with empty_electrode table
 empty_electrode_file = [PATH_ANNOT, filesep, op.sub '_empty_electrode.txt']; 
 if exist('empty_electrode_file', 'file')
     empty_electrode = bml_annot_read();
     cfg1=[];
     cfg1.groupby='label';
-    artifact_empty = bml_annot_union(cfg1, artifact, empty_electrode);
-
-        %masking artifacts and empty_electrodes with NaNs
-    cfg1=[];
-    cfg1.annot=artifact_empty;
-    cfg1.label_colname = 'label';
-    cfg1.complete_trial = true; %masks entire trials
-    cfg1.value=NaN;
-    D_sel_filt_trial_mask = bml_mask(cfg1,D_sel_filt_trial);
+    artifact_and_empty = bml_annot_union(cfg1, artifact, empty_electrode);
+else
+    artifact_and_empty = artifact;
 end
+
+    %masking and empty_electrodes with NaNs
+cfg1=[];
+cfg1.annot=artifact_and_empty;
+cfg1.label_colname = 'label';
+cfg1.complete_trial = true; %masks entire trials
+cfg1.value=NaN;
+D_sel_filt_trial_mask = bml_mask(cfg1,D_sel_filt_trial);
 
 ieeg_rows = cellfun(@(x)any(strcmp(x,{'ecog','ECOG','dbs','DBS','macro','SEEG'})), electrodes.type);
 el_ieeg = electrodes(ieeg_rows,:);
@@ -138,8 +151,7 @@ ft_databrowser(cfg1,D_trial_ref);
 cfg1=[];
 cfg1.remask_nan = true;
 cfg1.value = 0;
-% % % % D_trial_ref_mask0 = bml_mask(cfg,D_trial_ref);
-D_trial_ref_mask0 = bml_mask(cfg1,D_sel_trial_mask_ref);
+D_trial_ref_mask0 = bml_mask(cfg1,D_trial_ref);
 
 
 % % % do timelock analysis for the raw, high pass filtered (hpf) and rereferenced (ref) versions of the data

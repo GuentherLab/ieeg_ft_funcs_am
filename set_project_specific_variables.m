@@ -21,7 +21,7 @@ end
 if op.denoised
     op.denoise_string = '_denoised';
 else
-    op.denoise_string = '_not_denoised';
+    op.denoise_string = '_not-denoised';
 end
 
 switch proj_str
@@ -98,39 +98,49 @@ switch proj_str
 
         session= bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_sessions.tsv']);
         
-        % merge electrode info into one table
-        electrodes = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_electrodes.tsv']);
+        %%%%%%%%% merge electrode info into one table
+            %%% import electrodes table while forcing HCPMMP labels to be char
+            % addresses problem where certain anatomical labels are numbers (like "4" for Area 4).....
+            % ..... causing readtable to import this column as numeric, setting text values to NaN
+        elc_filename = [PATH_ANNOT filesep 'sub-' op.sub '_electrodes.tsv']; 
+        importopts = detectImportOptions(elc_filename,'FileType','text');
+        importopts = setvartype(importopts, {'HCPMMP1_label_1','HCPMMP1_label_2'}, {'char','char'});
+        electrodes = readtable([PATH_ANNOT filesep 'sub-' op.sub '_electrodes.tsv'],importopts); clear importopts elc_filename
+
         channels = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_channels.tsv']); %%%% for connector info
             channels.name = strrep(channels.name,'_Ll','_Lm'); % change name to match naming convention in electrodes table
         [~, ch_ind] = intersect(channels.name, electrodes.name,'stable');
+        if ~any(contains(channels.Properties.VariableNames,'acquisition_reference'))
+            channels.acquisition_reference = cell(height(channels),1); 
+        end
         electrodes = join(electrodes,channels(ch_ind,{'name','connector','channel','acquisition_reference'}) ,'keys','name'); %%% add connector info
 
-        % add connector labels to macro LFP channels, so we can run CAR and CTAR referencing on them 
+        % add connector labels to macro channels.... though we shouldn't run CAR or CTAR on these channels
         electrodes.connector(contains(electrodes.channel, 'CMacro_LFP')) = -1; % assign an unused label
-        
 
         % define trial epochs for rereferencing
         % for dbs-seq/smsl, we will use experimenter keypress for trial start/end times
         %%%%% this means no trial overlap, but generally a large time buffer before cue onset and after speech offset
         epoch = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_task-' TASK '_annot-trials.tsv']);
+
+        % handle missing trial durations
+        for itrial = 1:height(epoch)
+            if isnan(epoch.duration(itrial))
+                if ~[itrial == height(epoch)] % if not the last trial
+                    epoch.ends(itrial)= min([epoch.starts(itrial) + op.default_trialdur_max_if_empty, epoch.ends(itrial+1) - op.default_iti_if_empty]);
+                elseif itrial == height(epoch) % last trial
+                    epoch.ends(itrial)= epoch.starts(itrial) + op.default_trialdur_max_if_empty;
+                end
+                epoch.duration(itrial) = epoch.ends(itrial) - epoch.starts(itrial); 
+            end
+        end
     otherwise
         error('Could not identify project from subject name')
 end
+clear itrial proj_str
 
 % common variables
 if exist(ARTIFACT_FILENAME_SUB, 'file')
     artifact = bml_annot_read(ARTIFACT_FILENAME_SUB);  
 end
 
-% handle missing trial durations
-for itrial = 1:height(epoch)
-    if isnan(epoch.duration(itrial))
-        if ~[itrial == height(epoch)] % if not the last trial
-            epoch.ends(itrial)= min([epoch.starts(itrial) + op.default_trialdur_max_if_empty, epoch.ends(itrial+1) - op.default_iti_if_empty]);
-        elseif itrial == height(epoch) % last trial
-            epoch.ends(itrial)= epoch.starts(itrial) + op.default_trialdur_max_if_empty;
-        end
-        epoch.duration(itrial) = epoch.ends(itrial) - epoch.starts(itrial); 
-    end
-end
-clear itrial proj_str

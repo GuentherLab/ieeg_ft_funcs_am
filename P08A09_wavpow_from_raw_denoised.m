@@ -4,7 +4,7 @@
 
 
 
-function P08A09_wavpow_from_denoised(op)
+function P08A09_wavpow_from_raw_denoised(op)
 
 %% load packages
 ft_defaults
