@@ -33,6 +33,7 @@ cfg.epoch = epoch_table;
 D_trialed = bml_redefinetrial(cfg, FT_file);
 %}
 
+%{
 % calculating timepoints (column number)
 timepoints = [];
 j=1;
@@ -68,7 +69,7 @@ trialed.label = FT_file.label;
 trialed.trial = {};
 trialed.time = {};
 trialed.cfg = FT_file.cfg;
-trialed.hdr = FT_filfe.hdr;
+trialed.hdr = FT_file.hdr;
 trialed.fsample = NaN;
 
 for j=1:annot_sz(1) % trial
@@ -76,6 +77,9 @@ for j=1:annot_sz(1) % trial
     trial_temp = [];
     count = 1;
    
-    trialed.trial{1,j} = D_wavtransf.trial{1,1}(:,timepoints(j,1):timepoints(j,2),:);
-    trialed.time{1,j} = D_wavtransf.time{1,1}(1, timepoints(j,1):timepoints(j,2));
+    trialed.trial{1,j} = FT_file.trial{1,1}(:,timepoints(j,1):timepoints(j,2));
+    trialed.time{1,j} = FT_file.time{1,1}(1, timepoints(j,1):timepoints(j,2));
 end
+
+save([PATH_FT filesep SUBJECT '_ses-intraop_task-smsl_ft-raw_trial'],'trialed','-v7.3');
+%}

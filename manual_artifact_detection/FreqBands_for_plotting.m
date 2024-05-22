@@ -86,6 +86,21 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
             D_wavtransf{1,j}.trial{1,3}, D_wavtransf{1,j}.trial{1,4});
     end
     %}
+
+    % where should I get the trial window from for triplet subjects?
+
+    % determine where the trials start and end
+    trial_startend(:,1) = annot.audio_onset(:) - 0.5;
+    %trial_startend(:,2) = annot.sp_off(:) + 1.5;
+    for i=1:length(annot.sp_off)
+        if isnan(annot.sp_off(i)) && ~isnan(annot.keypress_time(i))
+            trial_startend(i,2) = annot.keypress_time(i); % if the trial is unusable and there is a keypress time it will instead get data ending at the keypress time
+        elseif isnan(annot.sp_off(i)) && isnan(annot.keypress_time(i))
+            trial_startend(i,2) = (annot.audio_onset(i) - 0.5) + 5;
+        else
+            trial_startend(i,2) = annot.sp_off(i) + 1.5;
+        end
+    end
     
     disp('calculating timepoints');
     % find all timepoints between start and end of each trial
@@ -100,14 +115,14 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     
         % loop to determine onset column
         onset=1;
-        while onset<annot{k,2}
+        while onset<trial_startend(k,1)
             onset = D_wavtransf.time{1,1}(1,j);
             j=j+1;
         end
         timepoints(k,1) = j;
         
         stop=1;
-        while stop<annot{k,3}
+        while stop<trial_startend(k,2)
             stop = D_wavtransf.time{1,1}(1,j);
             j=j+1;
         end
