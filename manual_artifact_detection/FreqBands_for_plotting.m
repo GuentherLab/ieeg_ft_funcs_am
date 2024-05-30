@@ -45,11 +45,13 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     raw2wavpow_confactor = FT_file.fsample/envelope_wavpow_outfreq;
     new_sz = round(sz(2)/raw2wavpow_confactor);
     %}
-
+    
     % calculate frequencies
     freqs = 10.^(linspace(0,2.5,20)); % number of frequencies: 20
     %D_wavtransf.trial{1,1} = zeros([sz(1),new_sz,length(freqs)]);
     for ifreq = 1:length(freqs)
+        fprintf('ifreq: %d', ifreq);
+
         thisfreq = freqs(ifreq)
         cfg=[];
         cfg.out_freq = 100;
@@ -68,12 +70,8 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     D_wavtransf.label = FT_file.label;
     D_wavtransf.hdr = FT_file.hdr;
 
-    % break up into trials
-    numFreq = length(D_wavtransf);
-    annot = readtable([PATH_ANNOT filesep SUBJECT '_trial_epoch'],'Delimiter','\t');
-
     % save continuous (untrialed) data
-    save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands.mat'],'trialed','-v7.3');
+    save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands.mat'],'D_wavtransf','-v7.3');
 
     % create new table with freqband file.trial and .time stored continuously
     %{
@@ -87,18 +85,39 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     end
     %}
 
-    % where should I get the trial window from for triplet subjects?
+    % break up into trials
+    numFreq = length(D_wavtransf);
+    annot_syllable = readtable([PATH_ANNOT filesep SUBJECT '_produced_syllable'],'Delimiter','\t');
 
+    % create a list of only the end of the last syllable
+    annot_end = annot_syllable.ends(3:3:end);
+
+    % where should I get the trial window from for triplet subjects?
+    annot_stim = bml_annot_read_tsv([PATH_ANNOT filesep SUBJECT '_stimulus_triplet']);
+
+    disp('determining where the trials start and end');
     % determine where the trials start and end
-    trial_startend(:,1) = annot.audio_onset(:) - 0.5;
+    trial_startend(:,1) = annot_stim.starts(:) - 0.5;
     %trial_startend(:,2) = annot.sp_off(:) + 1.5;
-    for i=1:length(annot.sp_off)
-        if isnan(annot.sp_off(i)) && ~isnan(annot.keypress_time(i))
-            trial_startend(i,2) = annot.keypress_time(i); % if the trial is unusable and there is a keypress time it will instead get data ending at the keypress time
-        elseif isnan(annot.sp_off(i)) && isnan(annot.keypress_time(i))
-            trial_startend(i,2) = (annot.audio_onset(i) - 0.5) + 5;
+    for i=1:length(annot_end)
+        rownum_thirdsyl = i*3; % row number for the third syllable in _produced_syllable
+
+        if ~isnan(annot_end(i)) % third syllable offset
+            % if the speech off of the third syllable exists, use that
+            trial_startend(i,2) = annot_end(i) + 1.5;
+        elseif ~isnan(annot_syllable.starts(rownum_thirdsyl)) % third syllable onset
+            trial_startend(i,2) = annot_syllable.starts(rownum_thirdsyl) + 1.5;
+        elseif ~isnan(annot_syllable.ends(rownum_thirdsyl-1)) % second syllable offset
+            trial_startend(i,2) = annot_syllable.ends(rownum_thirdsyl-1) + 1.5;
+        elseif ~isnan(annot_syllable.starts(rownum_thirdsyl-1)) % second syllable onset
+            trial_startend(i,2) = annot_syllable.starts(rownum_thirdsyl-1) + 1.5;
+        elseif ~isnan(annot_syllable.ends(rownum_thirdsyl-2)) % first syllable offset
+            trial_startend(i,2) = annot_syllable.ends(rownum_thirdsyl-2) + 1.5;
+        elseif ~ isnan(annot_syllable.starts(rownum_thirdsyl-2)) % first syllable onset
+            trial_startend(i,2) = annot_syllable.starts(rownum_thirdsyl-2) + 1.5;
         else
-            trial_startend(i,2) = annot.sp_off(i) + 1.5;
+            fprintf('no triplet speech onset and offset data, used stim offset. trial number: %d \n', i);
+            trial_startend(i,2) = annot_stim.ends(i) + 4;
         end
     end
     
@@ -106,7 +125,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     % find all timepoints between start and end of each trial
     timepoints = []; % each row is a trial; first column is start location; second column is end location
         % both timepoints are from continuous
-    annot_sz = size(annot);
+    annot_sz = size(annot_end);
     j=1;
     for k = 1:annot_sz(1)
         % for each timepoint (a) iterate through continuous and for each column in continuous (b) do a-b
@@ -129,6 +148,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
         timepoints(k,2) = j;
     end
     
+    disp('breaking up into trials');
     %trialed = cell(1,numFreq);
     % loop through each frequency
     %for n = 1:numFreq
