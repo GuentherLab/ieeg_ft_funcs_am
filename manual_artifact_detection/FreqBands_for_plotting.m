@@ -3,11 +3,18 @@ triplet_subjects = [];
 SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM1025", "sub-DM1037"];
 
 %% triplet loop
-% need to change how the frequencies are stored (3d matrix in fieldtrip file .trial)
-%for i=1:length(triplet_subjects)
+% store sessions as rows, and trials as columns
+
+%for sub=1:length(triplet_subjects)
     %SUBJECT = triplet_subjects(i); 
     SUBJECT = 'DBS3001';
     disp(SUBJECT);
+
+    clear continuous_FT
+    clear D_wavtransf
+    clear trial_startend
+    clear timepoints
+    clear trialed
 
     PATH_DATASET = 'Z:\DBS';
     PATH_SUB = [PATH_DATASET filesep SUBJECT];
@@ -23,6 +30,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
 
     % create new table with .trial and .time stored continuously
     %continuous_FT = struct('label','trial','time','cfg','hdr');
+    %{
     continuous_FT.label = FT_file.label;
     continuous_FT.cfg = FT_file.cfg;
     continuous_FT.hdr = FT_file.hdr;
@@ -36,57 +44,57 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
                                     FT_file.time{1,2},...
                                     FT_file.time{1,3},...
                                     FT_file.time{1,4});
-
-    % size to trial matrix to determine size of transformed trial structure
-    %{
-    sz = size(continuous_FT.trial{1,1});
-
-    envelope_wavpow_outfreq = 100;
-    raw2wavpow_confactor = FT_file.fsample/envelope_wavpow_outfreq;
-    new_sz = round(sz(2)/raw2wavpow_confactor);
     %}
+
+    % loop through each of the sessions
+    for j = 1:length(FT_file.trial)
+        % size to trial matrix to determine size of transformed trial structure
+        sz = size(FT_file.trial{1,j});
     
-    % calculate frequencies
-    freqs = 10.^(linspace(0,2.5,20)); % number of frequencies: 20
-    %D_wavtransf.trial{1,1} = zeros([sz(1),new_sz,length(freqs)]);
-    for ifreq = 1:length(freqs)
-        fprintf('ifreq: %d', ifreq);
+        fsample = round(1/mean(diff(FT_file.time{1})));
+    
+        envelope_wavpow_outfreq = 100;
+        raw2wavpow_confactor = fsample/envelope_wavpow_outfreq;
+        %new_sz = round(sz(2)/raw2wavpow_confactor);
+        new_sz = floor(sz(2)/raw2wavpow_confactor);
+        
+        % calculate frequencies
+        freqs = 10.^(linspace(0,2.3,20)); % number of frequencies: 20 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
+        D_wavtransf.trial{j,1} = zeros([sz(1),new_sz,length(freqs)]);
+        for ifreq = 1:length(freqs)
+            clear temp_in
+            fprintf('ifreq: %d\n', ifreq);
+    
+            thisfreq = freqs(ifreq);
+            cfg=[];
+            cfg.out_freq = 100;
+            cfg.wav_freq = thisfreq;
+            cfg.wav_width = 7;
 
-        thisfreq = freqs(ifreq)
-        cfg=[];
-        cfg.out_freq = 100;
-        cfg.wav_freq = thisfreq;
-        cfg.wav_width = 7;
-
-        %D_wavtransf{ifreq} = bml_envelope_wavpow(cfg,FT_file);
-        temp = bml_envelope_wavpow(cfg,continuous_FT);
-
-        D_wavtransf.trial{1,1}(:,:,ifreq) = temp.trial{1,1};
-        D_wavtransf.time = temp.time;
-        D_wavtransf.cfg = temp.cfg;
-        D_wavtransf.cfg = rmfield(D_wavtransf.cfg,'wav_freq');
+            % create a temporary ft file for bml_envelope_wavpow to use
+            temp_in.trial{1,1} = FT_file.trial{1,j};
+            temp_in.time{1,1} = FT_file.time{1,j};
+            temp_in.fsample = fsample;
+    
+            %D_wavtransf{ifreq} = bml_envelope_wavpow(cfg,FT_file);
+            temp_out = bml_envelope_wavpow(cfg,temp_in);
+    
+            D_wavtransf.trial{j,1}(:,:,ifreq) = temp_out.trial{1,1};
+            D_wavtransf.time{j,1} = temp_out.time{1,1};
+            D_wavtransf.cfg = temp_out.cfg;
+            D_wavtransf.cfg = rmfield(D_wavtransf.cfg,'wav_freq');
+        end
     end
 
     D_wavtransf.label = FT_file.label;
     D_wavtransf.hdr = FT_file.hdr;
 
-    % save continuous (untrialed) data
+    % save untrialed data
     save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands.mat'],'D_wavtransf','-v7.3');
 
-    % create new table with freqband file.trial and .time stored continuously
-    %{
-    continuous = cell(1,numFreq);
-    for j = 1:numFreq
-        continuous{1,j} = struct('time','trial');
-        continuous{1,j}.time = horzcat(D_wavtransf{1,j}.time{1,1}, D_wavtransf{1,j}.time{1,2}, ...
-            D_wavtransf{1,j}.time{1,3}, D_wavtransf{1,j}.time{1,4});
-        continuous{1,j}.trial = horzcat(D_wavtransf{1,j}.trial{1,1}, D_wavtransf{1,j}.trial{1,2}, ...
-            D_wavtransf{1,j}.trial{1,3}, D_wavtransf{1,j}.trial{1,4});
-    end
-    %}
-
     % break up into trials
-    numFreq = length(D_wavtransf);
+    size_D = size(D_wavtransf.trial{1,1});
+    numFreq = size_D(3);
     annot_syllable = readtable([PATH_ANNOT filesep SUBJECT '_produced_syllable'],'Delimiter','\t');
 
     % create a list of only the end of the last syllable
@@ -96,76 +104,105 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     annot_stim = bml_annot_read_tsv([PATH_ANNOT filesep SUBJECT '_stimulus_triplet']);
 
     disp('determining where the trials start and end');
-    % determine where the trials start and end
-    trial_startend(:,1) = annot_stim.starts(:) - 0.5;
-    %trial_startend(:,2) = annot.sp_off(:) + 1.5;
-    for i=1:length(annot_end)
-        rownum_thirdsyl = i*3; % row number for the third syllable in _produced_syllable
+    % loop through each of the sessions
+    % row indicates trial
+    % column indicates on or offset
+    % z axis indicates session
+    %trial_startend = zeros(length(annot_end),2,length(FT_file.trial));
+    j = 1; % trial number
+    prev_j = 1;
+    for i=1:length(FT_file.trial) % loop through the sessions
+        % determine where the trials start and end
 
-        if ~isnan(annot_end(i)) % third syllable offset
-            % if the speech off of the third syllable exists, use that
-            trial_startend(i,2) = annot_end(i) + 1.5;
-        elseif ~isnan(annot_syllable.starts(rownum_thirdsyl)) % third syllable onset
-            trial_startend(i,2) = annot_syllable.starts(rownum_thirdsyl) + 1.5;
-        elseif ~isnan(annot_syllable.ends(rownum_thirdsyl-1)) % second syllable offset
-            trial_startend(i,2) = annot_syllable.ends(rownum_thirdsyl-1) + 1.5;
-        elseif ~isnan(annot_syllable.starts(rownum_thirdsyl-1)) % second syllable onset
-            trial_startend(i,2) = annot_syllable.starts(rownum_thirdsyl-1) + 1.5;
-        elseif ~isnan(annot_syllable.ends(rownum_thirdsyl-2)) % first syllable offset
-            trial_startend(i,2) = annot_syllable.ends(rownum_thirdsyl-2) + 1.5;
-        elseif ~ isnan(annot_syllable.starts(rownum_thirdsyl-2)) % first syllable onset
-            trial_startend(i,2) = annot_syllable.starts(rownum_thirdsyl-2) + 1.5;
-        else
-            fprintf('no triplet speech onset and offset data, used stim offset. trial number: %d \n', i);
-            trial_startend(i,2) = annot_stim.ends(i) + 4;
+        while_count = 1; % index for trial_startend
+        %trial_startend(:,2) = annot.sp_off(:) + 1.5;
+        while j <= length(annot_stim.session_id) && annot_stim.session_id(j) == i
+            %j=j+1;
+            rownum_thirdsyl = j*3; % row number for the third syllable in _produced_syllable
+    
+            if ~isnan(annot_end(j)) % third syllable offset
+                % if the speech off of the third syllable exists, use that
+                trial_startend(while_count,2,i) = annot_end(j) + 1.5;
+                %disp('1');
+            elseif ~isnan(annot_syllable.starts(rownum_thirdsyl)) % third syllable onset
+                trial_startend(while_count,2,i) = annot_syllable.starts(rownum_thirdsyl) + 1.5;
+                %disp('2');
+            elseif ~isnan(annot_syllable.ends(rownum_thirdsyl-1)) % second syllable offset
+                trial_startend(while_count,2,i) = annot_syllable.ends(rownum_thirdsyl-1) + 1.5;
+                %disp('3');
+            elseif ~isnan(annot_syllable.starts(rownum_thirdsyl-1)) % second syllable onset
+                trial_startend(while_count,2,i) = annot_syllable.starts(rownum_thirdsyl-1) + 1.5;
+                %disp('4');
+            elseif ~isnan(annot_syllable.ends(rownum_thirdsyl-2)) % first syllable offset
+                trial_startend(while_count,2,i) = annot_syllable.ends(rownum_thirdsyl-2) + 1.5;
+                %disp('5');
+            elseif ~ isnan(annot_syllable.starts(rownum_thirdsyl-2)) % first syllable onset
+                trial_startend(while_count,2,i) = annot_syllable.starts(rownum_thirdsyl-2) + 1.5;
+                %disp('6');
+            else
+                fprintf('no triplet speech onset and offset data, used stim offset. trial number: %d \n', j);
+                trial_startend(while_count,2,i) = annot_stim.ends(j) + 4;
+            end
+
+            j=j+1;
+            while_count = while_count + 1;
         end
+
+        trial_startend(:,1,i) = annot_stim.starts(prev_j:(j-1)) - 0.5;
+        prev_j = j;
+        %fprintf('while break row num: %d\n', j);
     end
     
     disp('calculating timepoints');
     % find all timepoints between start and end of each trial
-    timepoints = []; % each row is a trial; first column is start location; second column is end location
+    timepoints = zeros(length(annot_end),2,length(FT_file.trial)); % each row is a trial; first column is start location; second column is end location; z axis is session
         % both timepoints are from continuous
-    annot_sz = size(annot_end);
-    j=1;
-    for k = 1:annot_sz(1)
-        % for each timepoint (a) iterate through continuous and for each column in continuous (b) do a-b
-        % when a-b becomes < 0, the previous timepoint is the selected column
-        % optimization: after one timepoint is calculated, the calculation does not need to be performed on the previous set of times in continuous
-    
-        % loop to determine onset column
-        onset=1;
-        while onset<trial_startend(k,1)
-            onset = D_wavtransf.time{1,1}(1,j);
-            j=j+1;
-        end
-        timepoints(k,1) = j;
+    for i=1:length(FT_file.trial) % looping through the sessions
+        j=1;
+        annot_sz = size(trial_startend(:,:,i));
+        for k = 1:annot_sz(1) % looping through the trials
+            % for each timepoint (a) iterate through continuous and for each column in continuous (b) do a-b
+            % when a-b becomes < 0, the previous timepoint is the selected column
+            % optimization: after one timepoint is calculated, the calculation does not need to be performed on the previous set of times in continuous
         
-        stop=1;
-        while stop<trial_startend(k,2)
-            stop = D_wavtransf.time{1,1}(1,j);
-            j=j+1;
+            % loop to determine onset column
+            onset=1;
+            while onset<trial_startend(k,1,i)
+                onset = D_wavtransf.time{i,1}(1,j,1);
+                j=j+1;
+            end
+            timepoints(k,1,i) = j;
+            
+            stop=1;
+            while stop<trial_startend(k,2,i)
+                stop = D_wavtransf.time{i,1}(1,j,1);
+                j=j+1;
+            end
+            timepoints(k,2,i) = j;
+
+            j = 1; % timepoints may overlap, have to reset j
         end
-        timepoints(k,2) = j;
     end
     
     disp('breaking up into trials');
+    %trialed = struct('label','trial','time','cfg','hdr','fsample');
+    trialed.label = D_wavtransf.label;
+    trialed.trial = {};
+    trialed.time = {};
+    trialed.cfg = D_wavtransf.cfg;
+    trialed.hdr = D_wavtransf.hdr;
+    %trialed.fsample = D_wavtransf.fsample;
+
     %trialed = cell(1,numFreq);
-    % loop through each frequency
-    %for n = 1:numFreq
-        % copy other data stored in the table to the new variable (basically not .time and .trial)
-        %trialed = struct('label','trial','time','cfg','hdr','fsample');
-        trialed.label = D_wavtransf.label;
-        trialed.trial = {};
-        trialed.time = {};
-        trialed.cfg = D_wavtransf.cfg;
-        trialed.hdr = D_wavtransf.hdr;
-        %trialed.fsample = D_wavtransf.fsample;
+    for i=1:length(FT_file.trial) % looping through the sessions
+        % copy other data stored in the table to the new variable (basically not .time and .trial) 
         
         % paste the data into the new table under the correct trial number
         % run through each trial
+        annot_sz = size(trial_startend(:,:,i));
         for j=1:annot_sz(1) % trial
-            trial_temp = [];
-            count = 1;
+            %trial_temp = [];
+            %count = 1;
             %{
             for k=timepoints(j,1):timepoints(j,2) % timepoints
                 % take each datapoint between onset and offset from continous and put into .trial
@@ -182,20 +219,25 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
                 count = count+1;
             end
             %}
-            trialed.trial{1,j} = D_wavtransf.trial{1,1}(:,timepoints(j,1):timepoints(j,2),:);
-            trialed.time{1,j} = D_wavtransf.time{1,1}(:,timepoints(j,1):timepoints(j,2));
-        %end
+            trialed.trial{i,j} = D_wavtransf.trial{i,1}(:,timepoints(j,1,i):timepoints(j,2,i),:);
+            trialed.time{i,j} = D_wavtransf.time{i,1}(:,timepoints(j,1,i):timepoints(j,2,i));
+        end     
     end
 
     save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands-trial.mat'],'trialed','-v7.3');
-    %save([PATH_FT filesep SUBJECT 'ft_raw_session_test_change-frequency-location.mat'],'trialed','-v7.3');
+    disp('finished');
 %end
 
 %% SMSL loop
-%for n=1:length(SMSL_subjects)
+%for sub=1:length(SMSL_subjects)
     %SUBJECT = char(SMSL_subjects(i)); 
     SUBJECT = 'sub-DM1005';
     disp(SUBJECT);
+
+    clear D_wavtransf
+    clear trial_startend
+    clear timepoints
+    clear trialed
 
     PATH_DATASET = 'Y:\DBS';
     PATH_DER = [PATH_DATASET filesep 'derivatives'];
@@ -209,17 +251,19 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     FT_file = tempname.D;
 
     % computes trial start and end time
+    disp('determining where the trials start and end');
     %annot = readtable([PATH_ANNOT filesep SUBJECT '_ses-intraop_task-smsl_annot-trials.tsv'],'FileType','text','Delimiter','\t');
     annot = readtable([PATH_ANNOT filesep SUBJECT '_ses-intraop_task-smsl_annot-produced-syllables.tsv'],'FileType','text','Delimiter','\t');
+
     trial_startend(:,1) = annot.audio_onset(:) - 0.5;
     %trial_startend(:,2) = annot.sp_off(:) + 1.5;
-    for i=1:length(annot.sp_off)
-        if isnan(annot.sp_off(i)) && ~isnan(annot.keypress_time(i))
-            trial_startend(i,2) = annot.keypress_time(i); % if the trial is unusable and there is a keypress time it will instead get data ending at the keypress time
-        elseif isnan(annot.sp_off(i)) && isnan(annot.keypress_time(i))
-            trial_startend(i,2) = (annot.audio_onset(i) - 0.5) + 5;
+    for j=1:length(annot.sp_off)
+        if isnan(annot.sp_off(j)) && ~isnan(annot.keypress_time(j))
+            trial_startend(j,2) = annot.keypress_time(j); % if the trial is unusable and there is a keypress time it will instead get data ending at the keypress time
+        elseif isnan(annot.sp_off(j)) && isnan(annot.keypress_time(j))
+            trial_startend(j,2) = (annot.audio_onset(j) - 0.5) + 5;
         else
-            trial_startend(i,2) = annot.sp_off(i) + 1.5;
+            trial_startend(j,2) = annot.sp_off(j) + 1.5;
         end
     end
 
@@ -238,7 +282,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     raw2wavpow_confactor = FT_file.fsample/envelope_wavpow_outfreq;
     new_sz = round(sz(2)/raw2wavpow_confactor);
 
-    freqs = 10.^(linspace(0,2.5,20)); % number of frequencies: 20
+    freqs = 10.^(linspace(0,2.3,20)); % number of frequencies: 20 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
     D_wavtransf.trial{1,1} = zeros([sz(1),new_sz,length(freqs)]);
     for ifreq = 1:length(freqs)
         fprintf('ifreq: %d \n', ifreq);
@@ -248,11 +292,11 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
         cfg.wav_freq = thisfreq;
         cfg.wav_width = 7;
 
-        temp = bml_envelope_wavpow(cfg,FT_file);
+        temp_out = bml_envelope_wavpow(cfg,FT_file);
         %D_wavtransf{ifreq} = bml_envelope_wavpow(cfg,FT_file); 
 
-        D_wavtransf.trial{1,1}(:,:,ifreq) = temp.trial{1,1};
-        D_wavtransf.time = temp.time;
+        D_wavtransf.trial{1,1}(:,:,ifreq) = temp_out.trial{1,1};
+        D_wavtransf.time = temp_out.time;
         %{
         for iD = 1:sz(1)
             for jD = 1:sz(2)
@@ -260,7 +304,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
             end
         end
         %}
-        D_wavtransf.cfg = temp.cfg;
+        D_wavtransf.cfg = temp_out.cfg;
         D_wavtransf.cfg = rmfield(D_wavtransf.cfg,'wav_freq');
     end
 

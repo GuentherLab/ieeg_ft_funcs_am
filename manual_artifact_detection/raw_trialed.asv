@@ -96,10 +96,10 @@ for i=1:length(annot_end)
     elseif ~isnan(annot_syllable.ends(rownum_thirdsyl-2)) % first syllable offset
         epoch_table.ends(i) = annot_syllable.ends(rownum_thirdsyl-2) + 1.5;
     elseif ~ isnan(annot_syllable.starts(rownum_thirdsyl-2)) % first syllable onset
-        epoch_table.ends(i) = annot_syllable.starts(rownum_thirdsyl-2) + 1.5;
+        epoch_table(i,2) = annot_syllable.starts(rownum_thirdsyl-2) + 1.5;
     else
         fprintf('no triplet speech onset and offset data, used stim offset. trial number: %d \n', i);
-        epoch_table.ends(i) = annot_stim.ends(i) + 4;
+        epoch_table(i,2) = annot_stim.ends(i) + 4;
     end
 end
 
@@ -107,5 +107,4 @@ cfg = [];
 cfg.epoch = epoch_table;
 D_trialed = bml_redefinetrial(cfg, continuous_FT);
 
-save([PATH_FT filesep SUBJECT '_ft_raw_session_trial'],'D_trialed','-v7.3');
 
