@@ -1,10 +1,6 @@
-%% is this function identical between denosied and not-denosied except for the file labels? 
-
 %%% do offline rereferencing of raw [HPF and line-noise filtered] signal after applying artifact masks
 %%% ... the function P08A09_detect_artifact_not_denoised must have been run first
 % protocol P09 for Pitt data; not yet assigned a protocol number for MGH data
-%%%% currently only tested w/ SMSL, not Triplet
-
 
 function P09_redefine_trial_common_avg_ref_not_denoised(op)
 
@@ -31,7 +27,19 @@ field_default('op','default_iti_if_empty',0.5); % sec
 set_project_specific_variables(); % set paths etc. based on data collection site, load timing and electrode data
 
 % filenamename that we will save rereferenced data into
-ft_savename = [FT_FILE_PREFIX 'raw-filt-trial_ar-',op.art_crit, '_ref-',op.rereference_method, op.denoise_string '.mat']; 
+ft_savename = [FT_FILE_PREFIX 'raw-filt-trial_ar-',op.art_crit, '_ref-',op.rereference_method,  '_not-denoised.mat']; 
+
+% handle missing trial durations
+for itrial = 1:height(epoch)
+    if isnan(epoch.duration(itrial))
+        if ~[itrial == height(epoch)]
+            epoch.ends(itrial)= min([epoch.starts(itrial) + op.default_trialdur_max_if_empty, epoch.ends(itrial+1) - op.default_iti_if_empty]);
+        elseif itrial == height(epoch) % last trial
+            epoch.ends(itrial)= epoch.starts(itrial) + op.default_trialdur_max_if_empty;
+        end
+        epoch.duration(itrial) = epoch.ends(itrial) - epoch.starts(itrial); 
+    end
+end
 
 % % % Load FieldTrip raw data
 load(FT_RAW_FILENAME,'D','loaded_epoch');
@@ -97,15 +105,16 @@ cfg.complete_trial = true; %masks entire trials
 cfg.value=NaN;
 D_sel_filt_trial_mask = bml_mask(cfg,D_sel_filt_trial);
 
-ieeg_rows = cellfun(@(x)any(strcmp(x,{'ecog','ECOG','dbs','DBS','macro','SEEG'})), electrodes.type);
-el_ieeg = electrodes(ieeg_rows,:);
+% % % Common trimmed average reference per connector groups
+
+el_ecog = electrodes(electrodes.type=="ECOG" | electrodes.type=="ecog",:);
 
 if strcmp(op.rereference_method,'none') % no referencing
     D_sel_filt_trial_mask_ref = D_sel_filt_trial_mask;
 elseif ~strcmp(op.rereference_method,'none')
     cfg=[];
-    cfg.label = el_ieeg.name;
-    cfg.group = el_ieeg.connector;
+    cfg.label = el_ecog.name;
+    cfg.group = el_ecog.connector;
     cfg.method = op.rereference_method; % 
     cfg.percent = 50; %percentage of 'extreme' channels in group to trim 
     D_sel_filt_trial_mask_ref = bml_rereference(cfg,D_sel_filt_trial_mask);
@@ -130,7 +139,7 @@ D_unfilt_trial = bml_redefinetrial(cfg,D_unfilt);
 D_trial_ref = D_sel_filt_trial_mask_ref; 
 
 % % % Saving referenced data
-% this section used to saved an annot table file called ['annot/' op.sub '_trial_epoch.txt'] from epoch variable... AM removed it 2024/02/05 because it appeared unnecessary and confusing
+% this section used to saved an annot table file called ['annot/' SUBJECT '_trial_epoch.txt'] from epoch variable... AM removed it 2024/02/05 because it appeared unnecessary and confusing
 save(ft_savename,'D_trial_ref','-v7.3');
 
 % % % Quality check - visually inspect the data
@@ -195,4 +204,4 @@ caxis([-1 1])
 title('ref')
 colorbar()
 
-saveas(f,[PATH_FIGURES filesep 'sub-' op.sub '_P09_raw_filt_ref_xcorr_T1_not_denoised.png'])
+saveas(f,[PATH_FIGURES filesep 'sub-' SUBJECT '_P09_raw_filt_ref_xcorr_T1_not_denoised.png'])

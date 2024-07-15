@@ -18,7 +18,6 @@ elseif strcmp(op.sub, 'DBS3031')
 end
 
 %% Loading FieldTrip data 
-  fprintf('\n* Finding artifacts (criteria %s) for subject %s...',op.art_crit,op.sub)
 load([FT_FILE_PREFIX, op.resp_signal, '_trial_denoised.mat'],'D_wavpow_trial');
 
 %   cut out of trialtable all rows for which the vibration-denoised trial is missing
@@ -81,12 +80,9 @@ D_wavpow.time = cell(1,nses);
 D_wavpow.fsample = D_wavpow_trial_no_overlap.fsample;
 
 %%% get session start/end times from trial times
-% need to use minimal durations for trials_in argument to P08_correct_fieldtrip_trialtable_discrepancies....
-%      or else trials_in durations will be wider than trials_ft
-trials_starts = trials; trials_starts.ends = trials_starts.starts+1; trials_starts.duration = []; 
 cfg1 = [];
 cfg1.plot_times = 0; 
-cfg1.trials = trials_starts; 
+cfg1.trials = trials; 
 [~, trials_ft_no_overlap] = P08_correct_fieldtrip_trialtable_discrepancies(cfg1,D_wavpow_trial_no_overlap); % remake trials_ft in case some trials got removed
 sestab = table(session_ids, nan(nses,1), nan(nses,1), nan(nses,1), 'VariableNames', {'session_id', 'starts', 'ends', 'duration'}); 
 for ises = 1:nses
@@ -110,7 +106,7 @@ sestab.duration = sestab.ends - sestab.starts;
 %% loading electrode type band table
 
 % get subject-specific artifact criteria
-if ~exist('el_band','var') %%%%%%%%%%%% AM 2024/4/20 not sure what this conditional is for - maybe should expose contents and remove if statement? 
+if ~exist('el_band','var') %%%%%%%%%%%% AM 2024/4/20 not sure what this conditional is for - expose contents and remove if statement? 
   param_default = artparam(artparam.subject == "default",:);
   param_subject = artparam(strcmp(artparam.subject,op.sub),:);
   if ~isempty(param_subject)
@@ -194,21 +190,19 @@ for idx = 1:height(artparam)
   end
 
   %plotting histogram to asses threshold levels
-  if ~isempty(v1) % AM 2024/4/21 added this IF-conditional for cases in which electrode values do not fall within THRESHOLD_FIX
-      clf(f); set(f,'Position',[0 0 600 600]);
-      for isess=1:nses
-        subplot(ceil(nses/2),2,isess)
-        hold on;
-        h=histogram(D_wavpow_eltype_env_log10.trial{isess},linspace(min(min_v),max(max_v),61),...
-          'FaceAlpha',0.1,'EdgeAlpha',1);
-        maxBinCount = max(h.BinCounts);
-        plot([THRESHOLD(isess,1),THRESHOLD(isess,1)],[0,maxBinCount .* 1.1]);
-        plot([THRESHOLD(isess,2),THRESHOLD(isess,2)],[0,maxBinCount .* 1.1]);
-        %set(gca,'YScale','log')
-        title(['session ' num2str(isess)]);
-      end
-      saveas(f,[PATH_FIGURES, filesep, op.sub '_' pname '_artifact_env_log10_hist.png'])
+  clf(f); set(f,'Position',[0 0 600 600]);
+  for isess=1:nses
+    subplot(ceil(nses/2),2,isess)
+    hold on;
+    h=histogram(D_wavpow_eltype_env_log10.trial{isess},linspace(min(min_v),max(max_v),61),...
+      'FaceAlpha',0.1,'EdgeAlpha',1);
+    maxBinCount = max(h.BinCounts);
+    plot([THRESHOLD(isess,1),THRESHOLD(isess,1)],[0,maxBinCount .* 1.1]);
+    plot([THRESHOLD(isess,2),THRESHOLD(isess,2)],[0,maxBinCount .* 1.1]);
+    %set(gca,'YScale','log')
+    title(['session ' num2str(isess)]);
   end
+  saveas(f,[PATH_FIGURES, filesep, op.sub '_' pname '_artifact_env_log10_hist.png'])
 
   %detecting segments of time for each channel above threshold
   artifact_eltype_1 = table();
@@ -399,4 +393,5 @@ end
 
 % AM changed write-to folder because permissions for sync and annot folders are not available
 bml_annot_write(artifact,ARTIFACT_FILENAME_SUB);
+bml_annot_write(artifact,[PATH_ANNOT, filesep, op.sub '_artifact_criteria_' op.art_crit '_denoised.txt']); % backup copy
 
