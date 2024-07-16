@@ -162,10 +162,10 @@ for i=1:length(FT_file.trial) % loop through the sessions
     %fprintf('while break row num: %d\n', j);
 end
 
-disp('cutting up into trials');
 D_trialed.trial = cell(length(FT_file.trial),length(trial_startend));
 D_trialed.time = cell(length(FT_file.trial),length(trial_startend));
 
+disp('cutting up into trials');
 for i=1:length(FT_file.trial) % session
     temp_startend = trial_startend(:,:,i);
     delRows = find(trial_startend(:,1,i) == 0 | trial_startend(:,2,i) == 0);
@@ -187,14 +187,13 @@ for i=1:length(FT_file.trial) % session
     cfg.epoch = epoch_table;
     temp = bml_redefinetrial(cfg,temp_FT); 
 
-    D_trialed.trial(i,1:length(temp_startend)) = temp.trial(1,:);
-    D_trialed.time(i,1:length(temp_startend)) = temp.time(1,:);
+    D_trialed.trial{i,:} = temp.trial(1,:);
+    D_trialed.time{i,:} = temp.time(1,:};
 end
 
 D_trialed.label = temp.label;
 D_trialed.hdr = temp.hdr;
 D_trialed.fsample = temp.fsample;
 
-save([PATH_FT filesep SUBJECT '_ft_raw_session_trial'],'D_trialed','-v7.3');
+%save([PATH_FT filesep SUBJECT '_ft_raw_session_trial'],'D_trialed','-v7.3');
 disp('finished');
-
