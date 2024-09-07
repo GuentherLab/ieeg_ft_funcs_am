@@ -1,12 +1,13 @@
 % window:
-triplet_subjects = [];
-SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM1025", "sub-DM1037"];
+%triplet_subjects = ['DBS3001'];
+%SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM1025", "sub-DM1037"];
+%SMSL_subjects = ['sub-DM1005'];
 
 %% triplet loop
 % store sessions as rows, and trials as columns
 
 %for sub=1:length(triplet_subjects)
-    %SUBJECT = triplet_subjects(i); 
+    %%SUBJECT = triplet_subjects(sub); 
     SUBJECT = 'DBS3001';
     disp(SUBJECT);
 
@@ -59,7 +60,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
         new_sz = floor(sz(2)/raw2wavpow_confactor);
         
         % calculate frequencies
-        freqs = 10.^(linspace(0,2.3,20)); % number of frequencies: 20 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
+        freqs = 10.^(linspace(0,2.3,80)); % number of frequencies: 80 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
         D_wavtransf.trial{j,1} = zeros([sz(1),new_sz,length(freqs)]);
         for ifreq = 1:length(freqs)
             clear temp_in
@@ -242,7 +243,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
 
 %% SMSL loop
 %for sub=1:length(SMSL_subjects)
-    %SUBJECT = char(SMSL_subjects(i)); 
+    %SUBJECT = char(SMSL_subjects(sub)); 
     SUBJECT = 'sub-DM1005';
     disp(SUBJECT);
 
@@ -294,7 +295,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
     raw2wavpow_confactor = FT_file.fsample/envelope_wavpow_outfreq;
     new_sz = round(sz(2)/raw2wavpow_confactor);
 
-    freqs = 10.^(linspace(0,2.3,20)); % number of frequencies: 20 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
+    freqs = 10.^(linspace(0,2.3,80)); % number of frequencies: 80 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
     D_wavtransf.trial{1,1} = zeros([sz(1),new_sz,length(freqs)]);
     for ifreq = 1:length(freqs)
         fprintf('ifreq: %d \n', ifreq);
@@ -430,4 +431,4 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
 
     save([PATH_FT filesep SUBJECT '_ses-intraop_task-smsl_ft-raw_freqbands-trial.mat'],'trialed','-v7.3');
     %save([PATH_FT filesep SUBJECT '_ses-intraop_task-smsl_test_change-frequency-location'],'trialed','-v7.3');
-    %end
+%end
