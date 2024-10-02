@@ -14,12 +14,12 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
 
 %% triplet loop
 % store sessions as rows, and trials as columns
-%for sub=1:length(triplet_subjects)
+for sub=1:length(triplet_subjects)
     %clearvars -except triplet_subjects SMSL_subjects
 
     %SUBJECT = triplet_subjects(sub); 
-    %SUBJECT = convertStringsToChars(triplet_subjects(sub));
-    SUBJECT = 'DBS3005';
+    SUBJECT = convertStringsToChars(triplet_subjects(sub));
+    %SUBJECT = 'DBS3005';
     disp(SUBJECT);
 
     clear continuous_FT
@@ -72,8 +72,8 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
         new_sz = floor(sz(2)/raw2wavpow_confactor);
         
         % calculate frequencies
-        %freqs = 10.^(linspace(0,2.3,80)); % number of frequencies: 80 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
-        freqs = 10.^(linspace(0,2.3,5));
+        freqs = 10.^(linspace(0,2.3,80)); % number of frequencies: 80 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
+        %freqs = 10.^(linspace(0,2.3,5));
         %D_wavtransf.trial{j,1} = zeros([sz(1),new_sz,length(freqs)]);
         for ifreq = 1:length(freqs)
             clear temp_in
@@ -133,7 +133,8 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
 
         while_count = 1; % index for trial_startend
         %trial_startend(:,2) = annot.sp_off(:) + 1.5;
-        while j <= length(annot_end) && annot_stim.session_id(j) == i
+        % may need contingencies if the number of syllables isn't three
+        while j <= length(annot_end) && (annot_syllable.session_id(j))/3 == i
             %j=j+1;
             rownum_thirdsyl = j*3; % row number for the third syllable in _produced_syllable
     
@@ -197,8 +198,13 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
             continue
         end
 
-        j=1;
-        annot_sz = size(trial_startend(:,:,i));
+        %annot_sz = size(trial_startend(:,:,i));
+        temp = trial_startend(:,:,i);
+        delRows = find(trial_startend(:,1,i) == 0 | trial_startend(:,2,i) == 0);
+        temp(delRows,:) = [];
+        annot_sz = size(temp);
+
+        j = 1;
         for k = 1:annot_sz(1) % looping through the trials
             % for each timepoint (a) iterate through continuous and for each column in continuous (b) do a-b
             % when a-b becomes < 0, the previous timepoint is the selected column
@@ -288,7 +294,7 @@ SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM
 
     save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands-trial.mat'],'trialed','-v7.3');
     disp('finished');
-%end
+end
 
 
 %% SMSL loop
