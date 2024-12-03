@@ -40,7 +40,7 @@ if ~isempty(artparam_subject)
     artparam = bml_annot_rowbind(artparam_default(~ismember(artparam_default.name,artparam_subject.name),:),artparam_subject);
 end
 
-%% Applying High Pass Filter
+%% Applying High Pass Filter and line noise filter
 cfg=[];
 cfg.hpfilter=op.do_high_pass_filter;
     cfg.hpfreq=op.high_pass_filter_freq;
