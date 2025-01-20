@@ -17,6 +17,7 @@ field_default('op','do_high_pass_filter','yes'); % should a high pass filter be 
     field_default('op','high_pass_filter_freq',1); %cutoff frequency of high pass filter, if one is to be used
 field_default('op','rereference_method','CTAR'); 
 field_default('op','out_freq',100); % downsample rate in hz for high gamma traces
+fiel_deafult('op','time_buffer_before_epoch_trial_start',0); %%% add this much time to the beginning of each trial in epoch.starts
 
 % use the following trial duration if one is not specified in the trials annot table
 %%% ..... probably not specified due to a missing keypress at the end of a session
@@ -91,7 +92,7 @@ D_sel_filt = ft_preprocessing(cfg,D_sel);
 % for dbs-seq/smsl, we will use experimenter keypress for trial start/end times
 %%%%% this means no trial overlap, but generally a large time buffer before cue onset and after speech offset
 cfg = [];
-cfg.epoch = epoch;
+cfg.epoch = epoch - op.time_buffer_before_epoch_trial_start; % add time buffer at beginning of trial
 D_sel_filt_trial = bml_redefinetrial(cfg,D_sel_filt);
 
 

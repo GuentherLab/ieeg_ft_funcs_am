@@ -88,7 +88,7 @@ switch proj_str
         
         FT_RAW_FILENAME = [FT_FILE_PREFIX 'raw.mat']; 
         
-        PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', ARTIFACT_CRIT];
+        PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', op.art_crit];
         PATH_FIGURES = [PATH_ART_PROTOCOL filesep 'figures']; 
         
         artparam = bml_annot_read_tsv([PATH_ARTIFACT, filesep, op.sub, '_artifact_criteria_', op.art_crit, op.denoise_string, '.tsv']); 
