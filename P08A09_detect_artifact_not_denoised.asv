@@ -171,7 +171,7 @@ for idx = 1:height(artparam)
           title(E_p.label(pidx));
       end
   end
-  saveas(hfig,[PATH_FIGURES filesep op.sub '_' pname '_artifact_crit-', op.art_crit,'_snippets_not_denoised.png'])
+  saveas(hfig,[PATH_FIGURES filesep op.sub '_' pname '_artifact_crit-', op.art,'_snippets_not_denoised.png'])
 
   
   %consolidating annotations with CONSOLIDATION_TIME_TOLERANCE margin of overlap
@@ -310,7 +310,7 @@ end
 if isfile(ARTIFACT_FILENAME_SUB)
     mkdir([PATH_ANNOT filesep 'archive'])
   copyfile(ARTIFACT_FILENAME_SUB,...
-        [PATH_ANNOT filesep 'archive' filesep op.sub '_artifact-criteria-' op.art_crit '_not-denoised_' datestr(now,'yyyymmdd_HHMM') '.tsv'])
+        [PATH_ANNOT filesep 'archive' filesep op.sub '_artifact-criteria-' ARTIFACT_CRIT '_not-denoised_' datestr(now,'yyyymmdd_HHMM') '.tsv'])
 end
 
 writetable(artifact, ARTIFACT_FILENAME_SUB, 'delimiter','\t', 'FileType','text');

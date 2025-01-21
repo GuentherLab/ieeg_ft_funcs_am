@@ -34,7 +34,7 @@ D_trial_ref=bml_mask(cfg,D_trial_ref);
 n_eltypes = height(artparam);
 D_avgpow_eltype = cell(n_eltypes,1); 
 for i_eltype = 1:n_eltypes % handle each electrode type  
-  fprintf('doing %s %s \n',SUBJECT,artparam.name{i_eltype});
+  fprintf('doing %s %s \n',op.sub,artparam.name{i_eltype});
 
     cfg = [];
     cfg.out_freq = op.out_freq; 
