@@ -8,6 +8,10 @@
 
 vardefault('srt_row', 1);
 vardefault('plot_raster',0); 
+vardefault('plotops',struct);
+    field_default('plotops','linewidth',1);
+vardefault('cmapname','jet');
+vardefault('y_ax_hardlims',[]);
 
 set_project_specific_variables()
 
@@ -17,6 +21,7 @@ thissub = srt.sub{srt_row};
 % remove trials with no response data
 non_empty_trials = ~cellfun(@isempty, timecourses_unaligned);
 trials_tmp = trials_tmp(non_empty_trials,:);
+    trial_conds = trial_conds(non_empty_trials,:); 
 timecourses_unaligned = timecourses_unaligned(non_empty_trials);
 
 
@@ -129,9 +134,8 @@ if ~isempty(sort_cond)
             end
 
             hfill = fill([xtime(plotinds), fliplr(xtime(plotinds))], [lowlims,uplims], [0.8 0.8 0.8], 'HandleVisibility','off'); % standard error
-            hfill.LineStyle = 'none'; % no border
-    
-            hfill.EdgeColor = [0.8 0.8 0.8]; 
+                hfill.LineStyle = 'none'; % no border
+                hfill.EdgeColor = [0.8 0.8 0.8]; 
        end
        hold on
     end
@@ -145,13 +149,12 @@ if ~isempty(sort_cond)
     hax = gca;
     for ival = 1:nvals_to_plot
         hplot(ival).LineWidth = plotops.linewidth;
-        colormap(cmapname)
         cmap = colormap;
         colormap_ind = round(size(cmap,1) * ival/nvals_to_plot);
         hplot(ival).Color = cmap(colormap_ind,:);
     end
 
-    xlim(xlimits)
+    
 
     ylimdefault = ylim;
     if ~isempty(y_ax_hardlims)
@@ -160,27 +163,36 @@ if ~isempty(sort_cond)
 
     legend_strs = [repmat({''},nconds,1); unq_conds]; % empty entries match error bars
 
-elseif ~isempty(sort_cond)
+elseif isempty(sort_cond)
 
-
+    timecourses_to_plot = nanmean(resp_align.resp); 
+    lowlims = resp_align.sem_lims(1,:); % standard error
+    uplims = resp_align.sem_lims(2,:); % standard error
+    if smooth_timecourses
+        timecourses_to_plot = smoothdata(timecourses_to_plot, 2, smooth_method, smooth_windowsize); 
+        lowlims = smoothdata(lowlims, 2, smooth_method, smooth_windowsize); 
+        uplims = smoothdata(uplims, 2, smooth_method, smooth_windowsize); 
+    end
     hold off
-    hfill = fill([xtime, fliplr(xtime)], [resp_align.sem_lims(1,:), fliplr(resp_align.sem_lims(2,:))], [0.8 0.8 0.8]); % standard error
-%         hfill.LineStyle = 'none'; % no border
-        hfill.EdgeColor = [0.8 0.8 0.8]; 
-    hold on 
-    hplot = plot(xtime, nanmean(resp_align.resp));
+    hfill = fill([xtime, fliplr(xtime)], [lowlims, fliplr(uplims)], [0.8 0.8 0.8]);
+                hfill.LineStyle = 'none'; % no border
+                hfill.EdgeColor = [0.8 0.8 0.8]; 
+    hold on  
+    hplot = plot(xtime, timecourses_to_plot);
         hplot.LineWidth = 1;
 
     legend_strs = {''}; 
 end
 
-    xlabel('Time (sec)')
+    xlim(xlimits)
+
+    xlabel('Time (sec)');
 %     ylabel('HG power (normed)')
-    ylabel('normed power')
+    ylabel('normed power');
 
-    set(gcf,'Color',[1 1 1])
+    set(gcf,'Color',[1 1 1]);
 
-    hleg = legend(legend_strs{:},'Interpreter','none');
+    % hleg = legend(legend_strs{:},'Interpreter','none');
     hold off
 
 
