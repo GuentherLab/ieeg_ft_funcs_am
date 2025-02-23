@@ -1,8 +1,6 @@
 % window:
-
-%{
 triplet_subjects = ["DBS3001","DBS3002","DBS3003","DBS3004","DBS3005",...
-    "DBS3006","DBS3008","DBS3010","DBS3011","DBS3012",...
+    "DBS3006","DBS3008","DBS3010","DBS30011","DBS30012",...
     "DBS3014","DBS3015","DBS3016","DBS3017","DBS3018",...
     "DBS3019","DBS3020","DBS3021","DBS3022","DBS3023",...
     "DBS3024","DBS3025","DBS3026","DBS3027","DBS3028",...
@@ -11,21 +9,17 @@ triplet_subjects = ["DBS3001","DBS3002","DBS3003","DBS3004","DBS3005",...
     "DBS4071","DBS4072","DBS4073","DBS4074","DBS4075",...
     "DBS4076","DBS4077","DBS4078","DBS4079","DBS4080",...
     "DBS4083","DBS4084","DBS4085","DBS4086","DBS4087"];
-%}
-triplet_subjects = ["DBS4067","DBS4070",...
-    "DBS4071","DBS4072","DBS4073","DBS4074","DBS4075",...
-    "DBS4076","DBS4077","DBS4078","DBS4079","DBS4080",...
-    "DBS4083","DBS4084","DBS4085","DBS4086","DBS4087"];
 SMSL_subjects = ["sub-DM1005", "sub-DM1007", "sub-DM1008", "sub-DM1024", "sub-DM1025","sub-DM1037"];
 %SMSL_subjects = ['sub-DM1005'];
 
 %% triplet loop
 % store sessions as rows, and trials as columns
-for sub=1:length(triplet_subjects)
+%for sub=1:length(triplet_subjects)
     %clearvars -except triplet_subjects SMSL_subjects
 
-    SUBJECT = convertStringsToChars(triplet_subjects(sub));
-    %SUBJECT = 'DBS3011';
+    %SUBJECT = triplet_subjects(sub); 
+    %SUBJECT = convertStringsToChars(triplet_subjects(sub));
+    SUBJECT = 'DBS3011';
     disp(SUBJECT);
 
     clear continuous_FT
@@ -84,8 +78,8 @@ for sub=1:length(triplet_subjects)
         new_sz = floor(sz(2)/raw2wavpow_confactor);
         
         % calculate frequencies
-        freqs = 10.^(linspace(0,2.3,80)); % number of frequencies: 80 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
-        %freqs = 10.^(linspace(0,2.3,5));
+        %freqs = 10.^(linspace(0,2.3,80)); % number of frequencies: 80 (logarithmaclly spaced between 1 and 200 [previously between 1 and 316])
+        freqs = 10.^(linspace(0,2.3,5));
         %D_wavtransf.trial{j,1} = zeros([sz(1),new_sz,length(freqs)]);
         for ifreq = 1:length(freqs)
             clear temp_in
@@ -116,7 +110,7 @@ for sub=1:length(triplet_subjects)
     D_wavtransf.hdr = FT_file.hdr;
 
     % save untrialed data
-    save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands.mat'],'D_wavtransf','-v7.3');
+    %save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands.mat'],'D_wavtransf','-v7.3');
 
     % break up into trials
     size_D = size(D_wavtransf.trial{1,1});
@@ -306,7 +300,7 @@ for sub=1:length(triplet_subjects)
 
     save([PATH_FT filesep SUBJECT '_ft_raw_session_freqbands-trial.mat'],'trialed','-v7.3');
     disp('finished');
-end
+%end
 
 
 %% SMSL loop
