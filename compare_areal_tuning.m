@@ -47,9 +47,9 @@ for iregion = 1:nregions
     %%%% compute error bar values - 95% confidence intervals using binomial test on each area independently
     % move fieldtrip version of binocdf to bottom of path so that we use matlab inbuilt version
     oldpath = path; path(oldpath, [PATH_FIELDTRIP_CODE filesep '\external\stats']); clear oldpath 
-    binomial_tes_alpha=.0001:.0001:.9999; 
-    p = binocdf(areastats.nelc_sgn(iregion), areastats.nelc_valid(iregion), binomial_tes_alpha);
-    areastats.ebar_lims(iregion,1:2) = binomial_tes_alpha([find(p>.975,1,'last'),find(p<.025,1,'first')]);
+    binomial_test_alpha=.0001:.0001:.9999; 
+    p = binocdf(areastats.nelc_sgn(iregion), areastats.nelc_valid(iregion), binomial_test_alpha);
+    areastats.ebar_lims(iregion,1:2) = binomial_test_alpha([find(p>.975,1,'last'),find(p<.025,1,'first')]);
 end
 
 % warn about electrodes that were not assigned a region

@@ -7,6 +7,7 @@
 
 vardefault('op',struct);
 field_default('op','sub','DBS3012'); % triplet subject
+field_default('op','denoised',0); % 
 field_default('op','art_crit','E'); % default to high gamma 
 proj_str = regexprep(op.sub, '[0-9]', ''); % string that will tell us what project / collection site this subject is from
 
