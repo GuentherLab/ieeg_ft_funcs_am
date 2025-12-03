@@ -46,7 +46,7 @@ cfg.hpfilttype='but';
 cfg.hpfiltord=5;
 cfg.hpfiltdir='twopass';
 cfg.bsfilter = op.do_bsfilter;
-    cfg.bsfreq= [op.line_noise_harm_freqs-1; op.line_noise_harm_freqs+1]'; % notch filters for 60hz harmonics
+    cfg.bsfreq= [op.line_noise_harm_freqs-0.3; op.line_noise_harm_freqs+0.3]'; % notch filters for 60hz harmonics
 cfg.channel={'ecog_*','macro_*','micro_*','dbs_*'};
 D_hpf = ft_preprocessing(cfg,D);
 

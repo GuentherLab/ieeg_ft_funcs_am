@@ -1,5 +1,5 @@
  %%%% check whether there is a nonrandom distribution of significantly tuned electrodes across areas
- % before running, need to load resp_temp table and set regiondef and param (project-specfic
+ % before running, need to load resp_temp table and set regiondef and param (project-specfic)
 
 % close all
 
