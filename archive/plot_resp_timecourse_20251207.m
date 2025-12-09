@@ -15,8 +15,8 @@ vardefault('y_ax_hardlims',[]);
 
 set_project_specific_variables()
 
-% channame = srt.chan{srt_row};
-% thissub = srt.sub{srt_row};
+channame = srt.chan{srt_row};
+thissub = srt.sub{srt_row};
  
 % remove trials with no response data
 non_empty_trials = ~cellfun(@isempty, timecourses_unaligned);
@@ -26,7 +26,7 @@ timecourses_unaligned = timecourses_unaligned(non_empty_trials);
 
 
 %% align responses using alignment times provided within trials_tmp by the wrapper function
-% subind = string(subs.subject)==thissub; 
+subind = string(subs.subject)==thissub; 
 
 ntrials = height(trials_tmp);
  nans_tr = nan(ntrials,1); 
