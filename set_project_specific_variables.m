@@ -96,11 +96,18 @@ switch proj_str
         session= bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_sessions.tsv']);
         
         % merge electrode info into one table
-        electrodes = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_electrodes.tsv']);
         channels = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_channels.tsv']); %%%% for connector info
             channels.name = strrep(channels.name,'_Ll','_Lm'); % change name to match naming convention in electrodes table
-        [~, ch_ind] = intersect(channels.name, electrodes.name,'stable');
-        electrodes = join(electrodes,channels(ch_ind,{'name','connector'}) ,'keys','name'); %%% add connector info
+        
+        electrodes_table_filename = [PATH_ANNOT filesep 'sub-' op.sub '_electrodes.tsv'];
+
+        if exist(electrodes_table_filename, 'file')
+            electrodes = bml_annot_read_tsv(electrodes_table_filename);
+            [~, ch_ind] = intersect(channels.name, electrodes.name,'stable');
+            electrodes = join(electrodes,channels(ch_ind,{'name','connector'}) ,'keys','name'); %%% add connector info
+        else 
+            electrodes = channels; 
+        end
 
         % define trial epochs for referencing
         % for dbs-seq/smsl, we will use experimenter keypress for trial start/end times
