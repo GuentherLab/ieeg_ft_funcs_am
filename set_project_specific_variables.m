@@ -109,10 +109,30 @@ switch proj_str
             electrodes = channels; 
         end
 
-        % define trial epochs for referencing
+        %% define trial epochs for referencing
         % for dbs-seq/smsl, we will use experimenter keypress for trial start/end times
         %%%%% this means no trial overlap, but generally a large time buffer before cue onset and after speech offset
         epoch = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_task-' TASK '_annot-trials.tsv']);
+
+        % subject DM1047 (and maybe others) had NaN-duration trials in ../annot/...._annot-trials.tsv
+        %%% ... we can reconstruct where to cut boundaries for this trial from 
+        %%% ... do this rather than using next keyboard press, which sometimes occurs much later than a reasonable offset time
+        default_trial_duration = 8; % if end time is missing, make the trial last this long
+
+        % loop for correcting trials w/ nan duration
+        for itrial = 2:height(epoch)
+            if isnan(epoch.starts(itrial))
+                epoch.starts(itrial) = epoch.keypress_time(itrial-1); 
+            end
+            if isnan(epoch.ends(itrial))
+                epoch.ends(itrial) = epoch.starts(itrial) + default_trial_duration;
+            end
+        end
+        epoch.duration = epoch.ends - epoch.starts; 
+        clear default_trial_duration
+
+       %%
+
     otherwise
         error('Could not identify project from subject name')
 end
