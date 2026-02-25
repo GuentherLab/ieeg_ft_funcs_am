@@ -2,7 +2,7 @@
  %%%% .... optionally sort trials by specific conditions 
  %%%% .... responses will be time-locked to a particular timepoint (e.g. speech onset)
  % 
- % this script is intended by be called by project-specific wrapper scripts, e.g. plot_resp_timecourse_triplet
+ % this script is intended by be called by project-specific wrapper scripts, e.g. plot_resp_timecourse_triplet and plot_resp_timecourse_seq
  
 %% params
 
@@ -12,11 +12,9 @@ vardefault('plotops',struct);
     field_default('plotops','linewidth',1);
 vardefault('cmapname','jet');
 vardefault('y_ax_hardlims',[]);
+vardefault('times_to_plot',table()); 
 
 set_project_specific_variables()
-
-% channame = srt.chan{srt_row};
-% thissub = srt.sub{srt_row};
  
 % remove trials with no response data
 non_empty_trials = ~cellfun(@isempty, timecourses_unaligned);
@@ -34,7 +32,8 @@ ntrials = height(trials_tmp);
  trials_tmp = [trials_tmp, table(nans_tr,              nans_tr,...
      'VariableNames',     {'tpoints_pre_onset', 'tpoints_post_onset'})];
  
- samp_period = 1e-5 * round(1e5 * diff(trials_tmp.times{1}(1:2))); % sampling interval
+ % compute sampling interval... assumes a static sample rate
+ samp_period = 1e-5 * round(1e5 * diff(trials_tmp.times{1}(1:2))); 
  
  %%% find trial lengths pre- and post- the alignment time
 for itrial = 1:ntrials
@@ -184,16 +183,48 @@ elseif isempty(sort_cond)
     legend_strs = {''}; 
 end
 
-    xlim(xlimits)
+%%% set xlims before the next section, which queries the xlims of the axis; if they aren't set first, matlab sometimes gets confused while querying them
+vardefault('xlimits', samp_period * [-n_tpoints_pre_fixed, n_tpoints_post_fixed]); 
+xlim(xlimits)
 
-    xlabel('Time (sec)');
+
+% plot xlines for all specified timepoints
+%%% only implemented for seq, not triplet caller scripts
+yproportion = 0.9; % how high up the plot to put the label text
+for ilabel = 1:height(times_to_plot)
+    thislabel = times_to_plot.varname{ilabel};
+    t_thislabel = trials_tmp{:,thislabel}; % absolute times for this event on each trial
+    t_post_aligntime_thislabel = t_thislabel - trials_tmp.align_time; % how long after the align time this event occurs each trial (negative if this event occurs pre-aligntime)
+    mean_post_aligntime_thislabel = mean(t_post_aligntime_thislabel); % average window size between this event and aligntime across trials 
+    h_xline(ilabel) = xline(mean_post_aligntime_thislabel, 'Color', times_to_plot.color{ilabel}); 
+
+    % add text label for this timepoint
+    switch times_to_plot.line_side{ilabel}; case 'R'; alignside = 'Left'; case 'L'; alignside = 'Right'; end % 'side' is the reverse of alignment
+    hax = gca; 
+    ax_pos = hax.Position;          % Convert axis coords to normalized figure coords....  [left bottom width height] in figure norm units
+    xl = hax.XLim;
+    yl = hax.YLim;
+    xproportion = [mean_post_aligntime_thislabel - xl(1)] / diff(xl);
+    xcoord = ax_pos(1) + xproportion*ax_pos(3);
+    ycoord = ax_pos(2) + yproportion*ax_pos(4);
+    annotation('textbox', [xcoord, ycoord, 0, 0], ...
+        'String', times_to_plot.plot_label{ilabel}, ...
+        'HorizontalAlignment', alignside, ...
+        'VerticalAlignment', 'middle', ...
+        'FitBoxToText', 'on', ...
+        'EdgeColor', 'none');
+
+end
+
+
+xlabel('Time (sec)');
 %     ylabel('HG power (normed)')
-    ylabel('normed power');
+ylabel('normed power');
 
-    set(gcf,'Color',[1 1 1]);
+set(gcf,'Color',[1 1 1]);
 
-    % hleg = legend(legend_strs{:},'Interpreter','none');
-    hold off
+% hleg = legend(legend_strs{:},'Interpreter','none');
+hold off
 
 
 
