@@ -104,7 +104,8 @@ if show_barplot
     hax.XTickLabels = areastats.region;
     hyline = yline(alpha);
     set(0, 'DefaultTextInterpreter', 'none')
-    titlestr = [full_param_string, '..... p = ' num2str(chi_p)] ;
+%     titlestr = [full_param_string, '..... p = ' num2str(chi_p)] ;
+    titlestr = [full_param_string];
     htitle = title(titlestr); 
 
     hbar.FaceColor = bar_face_color; 

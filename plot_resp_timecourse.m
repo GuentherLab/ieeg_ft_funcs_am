@@ -12,11 +12,12 @@ field_default('op','plot_raster',0);
 field_default('op','trace_width',1);
 field_default('op','cmapname','jet');
 field_default('op','y_ax_hardlims',[]);
-field_default('op','op.times_to_plot',table()); 
+field_default('op','times_to_plot',table()); 
 
 field_default('op','yline_zero_width', 0.25); 
 field_default('op','yline_zero_color',  [0.8 0.8 0.8]); 
 field_default('op','yline_zero_style', '-');
+field_default('op','y_timelabel_height',0.8); % how high up the plot to put the timepoint label text
 
 field_default('op','trial_time_adj_method','median_plus_sd'); % median plus stdev
 
@@ -159,16 +160,11 @@ if ~isempty(op.sort_cond)
         hplot(ival).Color = cmap(colormap_ind,:);
     end
 
-    
-
-% % % % % % % % % % % % % % % % % %     ylimdefault = ylim;
-% % % % % % % % % % % % % % % % % %     if ~isempty(y_ax_hardlims)
-% % % % % % % % % % % % % % % % % %         ylim([max(y_ax_hardlims(1),ylimdefault(1)), min(y_ax_hardlims(2),ylimdefault(2))])
-% % % % % % % % % % % % % % % % % %     end
+   
 
     legend_strs = [repmat({''},nconds,1); unq_conds]; % empty entries match error bars
 
-elseif isempty(sort_cond)
+elseif isempty(op.sort_cond)
 
     timecourses_to_plot = nanmean(resp_align.resp); 
     lowlims = resp_align.sem_lims(1,:); % standard error
@@ -200,7 +196,6 @@ h_yline = yline(0.3,'LineWidth',op.yline_zero_width, 'Color',op.yline_zero_color
 
 % plot xlines for all specified timepoints
 %%% only implemented for seq, not triplet caller scripts
-yproportion = 0.95; % how high up the plot to put the label text
 for ilabel = 1:height(op.times_to_plot)
     thislabel = op.times_to_plot.varname{ilabel};
     t_thislabel = trials{:,thislabel}; % absolute times for this event on each trial
@@ -216,7 +211,7 @@ for ilabel = 1:height(op.times_to_plot)
     yl = hax.YLim;
     xproportion = [mean_post_aligntime_thislabel - xl(1)] / diff(xl);
     xcoord = ax_pos(1) + xproportion*ax_pos(3);
-    ycoord = ax_pos(2) + yproportion*ax_pos(4);
+    ycoord = ax_pos(2) + op.y_timelabel_height*ax_pos(4);
     annotation('textbox', [xcoord, ycoord, 0, 0], ...
         'String', op.times_to_plot.plot_label{ilabel}, ...
         'HorizontalAlignment', alignside, ...
