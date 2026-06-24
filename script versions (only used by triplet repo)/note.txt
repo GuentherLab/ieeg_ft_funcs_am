@@ -1,0 +1,4 @@
+this folder contains deprecated script versions of plotting and sorting code which have, in in code, been updated to be functions
+
+when returning to triplet analysis, we need to update the triplet code to call the function versions
+....after doing so, these script versions can be retired

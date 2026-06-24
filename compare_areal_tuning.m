@@ -1,118 +1,185 @@
  %%%% check whether there is a nonrandom distribution of significantly tuned electrodes across areas
- % before running, need to load resp_temp table and set regiondef and param (project-specfic)
+
+function subs = compare_areal_tuning(resp,op)
 
 % close all
 
-vardefault('alpha', 0.05); 
-vardefault('bar_face_color', [0.5 0.5 0.5]);
-vardefault('analyze_responsive_elcs_only',1);
-vardefault('warn_about_unassigned_elcs',0); 
+field_default('op','alpha', 0.05); 
+field_default('op','bar_face_color', [0.5 0.5 0.5]);
+field_default('op','analyze_responsive_elcs_only',1);
+field_default('op','warn_about_unassigned_elcs',0); 
+field_default('op','param','p_prod'); % this variable should generally be defined by calling func; project-specific
+field_default('op','full_param_string',op.param); % change the display name of the param - default to its name in resp table
+
+field_default('op','separate_individual_subs',0); 
+    field_default('op','n_subs_per_row',4); 
+
+%%% define anatomical regions composed of smaller areas
+% the default matches region names we expect in MGH data, including dbsseq
+field_default('op','regiondef',{...
+                'SMC',  {'1','2','3a','3b','4','6v','6d','43','55b','PEF','FEF','OP4','i6-8'};... % sensorimotor cortex... included operculum bc ecog strips can't get into operc
+                'vPMC', {'6r','FOP1'};... % ventral premotor... there are some elcs put into 'SMC' areas that are actually in vPMC... included operculum bc ecog strips can't get into operc
+                'STG', {'A4','A5','STGa','STV','TPOJ1' }; ... % superior temporal gyrus
+                'MFG',  {'8Av','8C','p9-46v'};... middle frontal gyrus... maybe also inf front sulcus
+                'IFG/IFS',  {'44','45','IFSp'};... % inferior frontal gyrus
+                'SMG/PF', {'PF','PFop'};... % supramarginal gyrus, operculum, ventral postcentral sulcus
+                'AG', {'PSL'};... % angular gyrus
+
+                'MTG', {'TE1a','TE1m','TE1p'};... middle temporal gyrus / TE
+                'STN', {'STN_associative_L','STN_motor_L','STN_motor_R' };...
+                'Thal', {'087_Thalamus_ventro_oralis_anterior_Voa_L','088_Thalamus_ventro_oralis_posterior_Vop_L','088_Thalamus_ventro_oralis_posterior_Vop_R',...
+                           '090_Thalamus_zentrolateralis_oralis_Zo_L','091_Thalamus_ventro_intermedius_internus_Vimi_R',...
+                           '094_Thalamus_ventro_intermedius_externus_Vime_L','094_Thalamus_ventro_intermedius_externus_Vime_R' };...
+                'GP', {'GPe_L','GPe_R','GPi_postparietal_R','GPi_premotor_R','GPi_sensorimotor_L','GPi_sensorimotor_L'};... % 
+                } ) ;
 
 atlas_var_names = {'HCPMMP1_label_1';'fs_anatomy';'DISTAL_label_1';'MOREL_label_1'}; 
 
-if analyze_responsive_elcs_only || ~ismember('rspv',resp.Properties.VariableNames)
+
+if op.newfig 
+    hfig = figure('color','w','WindowState', 'maximized');
+end
+
+if op.analyze_responsive_elcs_only || ~ismember('rspv',resp.Properties.VariableNames)
     rows_to_analyze = resp.rspv; 
-elseif ~analyze_responsive_elcs_only
+elseif ~op.analyze_responsive_elcs_only
     rows_to_analyze = 1:height(resp); 
 end
+resp.paramvals = resp{:,op.param};
 resp_temp = resp(rows_to_analyze,:);
-paramvals = paramvals(rows_to_analyze); 
 
-paramvalid = ~isnan(paramvals) & paramvals ~= 0; % electrodes with usable p values
-paramsgn = paramvals < alpha & paramvalid; % analyzable electrodes significantly tuned for param of interest
 
-nelc = height(resp_temp);
-resp_temp.region = cell(nelc,1); 
+if op.separate_individual_subs
+    subs = table(sort(unique(resp.sub)),'VariableNames',{'sub'}); 
+    nsubs = height(subs);
+    ncols = op.n_subs_per_row;
+    nrows = ceil([nsubs+1]/ncols);
 
-nregions = size(regiondef,1);
-areastats = table(regiondef(:,1), regiondef(:,2), nan(nregions,2), 'VariableNames', {'region','subareas','ebar_lims'});
+    for isub = 1:nsubs
+        subplot(nrows,ncols,isub)
+        thissub = subs.sub{isub}; 
+        resp_sub = resp_temp(strcmp(resp_temp.sub,thissub),:); % elcs for this sub
+        op.subtitle = thissub; 
+        subs.areastats{isub} =  sort_and_plot_elcs(resp_sub,op);
+    end
 
-natlas = length(atlas_var_names); 
-atlastab = table(atlas_var_names, cell(natlas,1), nan(natlas,1), nan(natlas,1), 'VariableNames', {'atlas', 'lblcnts', 'n_labeled_elcs', 'n_unlabeled_elcs'});
+    % plot the grand avg plot across subs
+    subplot(nrows,ncols,nsubs+1)
+    op.subtitle = 'all_subs'; 
+    sort_and_plot_elcs(resp_temp,op);
+    
+    
+elseif ~op.separate_individual_subs
+    op.subtitle = 'all_subs'; 
+    sort_and_plot_elcs(resp_temp,op)
+    areastats = {}; 
+end
 
-for iregion = 1:nregions
-    thisregion = areastats.region{iregion};
-    regionmatch = false(nelc,1); 
+titlestr = [op.full_param_string];
+htitle = sgtitle(titlestr); 
+
+%% 
+
+function areastats = sort_and_plot_elcs(resp_to_plot,op)
+
+    paramvalid = ~isnan(resp_to_plot.paramvals) & resp_to_plot.paramvals ~= 0; % electrodes with usable p values - p must not be zero
+    paramsgn = resp_to_plot.paramvals < op.alpha & paramvalid; % analyzable electrodes significantly tuned for param of interest
+    
+    nelc = height(resp_to_plot);
+    resp_to_plot.region = cell(nelc,1); 
+    
+    nregions = size(op.regiondef,1) + 1;
+    areastats = table([op.regiondef(:,1);'all'], [op.regiondef(:,2);{{'all'}}], nan(nregions,2), 'VariableNames', {'region','subareas','ebar_lims'});
+    
+    natlas = length(atlas_var_names); 
+    atlastab = table(atlas_var_names, cell(natlas,1), nan(natlas,1), nan(natlas,1), 'VariableNames', {'atlas', 'lblcnts', 'n_labeled_elcs', 'n_unlabeled_elcs'});
+    
+    for iregion = 1:nregions
+        thisregion = areastats.region{iregion};
+
+        if thisregion == "all"
+            regionmatch = true(nelc,1); 
+        else
+            regionmatch = false(nelc,1); 
+            for iatlas = 1:natlas
+                thisatlas = atlas_var_names{iatlas};
+                if ismember(thisatlas,resp_to_plot.Properties.VariableNames)
+                    regionmatch = regionmatch | any( table2array(rowfun(@(x)strcmp(x,areastats.subareas{iregion}),resp_to_plot,'InputVariables',thisatlas)), 2);
+                end
+            end
+        end
+
+        resp_to_plot.region(regionmatch) = repmat({thisregion},nnz(regionmatch),1);    areastats.nelc(iregion) = nnz(regionmatch); % total electrodes in this region
+        areastats.nelc_valid(iregion) = nnz(regionmatch & paramvalid); % number of analyzable electrodes in this region for the param of interest 
+        areastats.nelc_sgn(iregion) = nnz(regionmatch & paramsgn); % number of analyzable electrodes significantly tuned for param of interest in this region
+        areastats.prop_sgn(iregion) = areastats.nelc_sgn(iregion) / areastats.nelc_valid(iregion); % proportion of tuned electrodes in this region
+    
+        %%%% compute error bar values - 95% confidence intervals using binomial test on each area independently
+        binomial_test_op.alpha=.0001:.0001:.9999; 
+        p = binocdf(areastats.nelc_sgn(iregion), areastats.nelc_valid(iregion), binomial_test_op.alpha); %%%% note - this should be the matlab inbuilt version of binocdf - not the fieldtrip version - check your path
+        areastats.ebar_lims(iregion,1:2) = binomial_test_op.alpha([find(p>.975,1,'last'),find(p<.025,1,'first')]);
+    end
+    areastats.Properties.RowNames = areastats.region; 
+    
+    % warn about electrodes that were not assigned a region
+    %%%% need to update this so that it only doesn't treat ecog/dbs electrodes as 'unlabeled' for the purposes of dbs/ecog atlases
+    all_subareas = cat(2,[areastats.subareas{:}]'); 
     for iatlas = 1:natlas
-        thisatlas = atlas_var_names{iatlas};
+        thisatlas = atlas_var_names{iatlas}; 
         if ismember(thisatlas,resp_temp.Properties.VariableNames)
-            regionmatch = regionmatch | any( table2array(rowfun(@(x)strcmp(x,areastats.subareas{iregion}),resp_temp,'InputVariables',thisatlas)), 2);
+            [B,BG,BP] = groupcounts(resp_temp{:,thisatlas}); atlastab.lblcnts{iatlas} = table(BG, B, BP./100, 'VariableNames', {'label','count','proportion'}); clear B BG BP
+            atlastab.lblcnts{iatlas}.has_region = cellfun(@(x)ismember(x,all_subareas), atlastab.lblcnts{iatlas}.label); 
+            missing_reg = ~atlastab.lblcnts{iatlas}.has_region;
+            atlastab.n_labeled_elcs(iatlas) = sum(atlastab.lblcnts{iatlas}.count(~missing_reg)); 
+            atlastab.n_unlabeled_elcs(iatlas) = sum(atlastab.lblcnts{iatlas}.count(missing_reg)); 
+            atlastab.n_elcs(iatlas) = atlastab.n_labeled_elcs(iatlas) + atlastab.n_unlabeled_elcs(iatlas); 
+            if op.warn_about_unassigned_elcs && any(missing_reg)
+                fprintf([thisatlas ' labels not assigned a region (', num2str(atlastab.n_unlabeled_elcs(iatlas)), '/', num2str(atlastab.n_elcs(iatlas)) '):' ])
+                missing_label = atlastab.lblcnts{iatlas}(missing_reg,:)
+            end
         end
     end
-    resp_temp.region(regionmatch) = repmat({thisregion},nnz(regionmatch),1);    areastats.nelc(iregion) = nnz(regionmatch); % total electrodes in this region
-    areastats.nelc_valid(iregion) = nnz(regionmatch & paramvalid); % number of analyzable electrodes in this region for the param of interest 
-    areastats.nelc_sgn(iregion) = nnz(regionmatch & paramsgn); % number of analyzable electrodes significantly tuned for param of interest in this region
-    areastats.prop_sgn(iregion) = areastats.nelc_sgn(iregion) / areastats.nelc_valid(iregion); % proportion of tuned electrodes in this region
-
-    %%%% compute error bar values - 95% confidence intervals using binomial test on each area independently
-    % move fieldtrip version of binocdf to bottom of path so that we use matlab inbuilt version
-    oldpath = path; path(oldpath, [PATH_FIELDTRIP_CODE filesep '\external\stats']); clear oldpath 
-    binomial_test_alpha=.0001:.0001:.9999; 
-    p = binocdf(areastats.nelc_sgn(iregion), areastats.nelc_valid(iregion), binomial_test_alpha);
-    areastats.ebar_lims(iregion,1:2) = binomial_test_alpha([find(p>.975,1,'last'),find(p<.025,1,'first')]);
-end
-
-% warn about electrodes that were not assigned a region
-%%%% need to update this so that it only doesn't treat ecog/dbs electrodes as 'unlabeled' for the purposes of dbs/ecog atlases
-all_subareas = cat(2,[areastats.subareas{:}]'); 
-for iatlas = 1:natlas
-    thisatlas = atlas_var_names{iatlas}; 
-    if ismember(thisatlas,resp_temp.Properties.VariableNames)
-        [B,BG,BP] = groupcounts(resp_temp{:,thisatlas}); atlastab.lblcnts{iatlas} = table(BG, B, BP./100, 'VariableNames', {'label','count','proportion'}); clear B BG BP
-        atlastab.lblcnts{iatlas}.has_region = cellfun(@(x)ismember(x,all_subareas), atlastab.lblcnts{iatlas}.label); 
-        missing_reg = ~atlastab.lblcnts{iatlas}.has_region;
-        atlastab.n_labeled_elcs(iatlas) = sum(atlastab.lblcnts{iatlas}.count(~missing_reg)); 
-        atlastab.n_unlabeled_elcs(iatlas) = sum(atlastab.lblcnts{iatlas}.count(missing_reg)); 
-        atlastab.n_elcs(iatlas) = atlastab.n_labeled_elcs(iatlas) + atlastab.n_unlabeled_elcs(iatlas); 
-        if warn_about_unassigned_elcs && any(missing_reg)
-            fprintf([thisatlas ' labels not assigned a region (', num2str(atlastab.n_unlabeled_elcs(iatlas)), '/', num2str(atlastab.n_elcs(iatlas)) '):' ])
-            missing_label = atlastab.lblcnts{iatlas}(missing_reg,:)
-        end
-    end
-end
-
-% get the overall proportion of tuned electrodes with a region assigned and analyzable p values
-%%%%% alternative computation: region_assigned = ~cellfun(@isempty,resp_temp.region); proportion_signficant_overall = mean( paramsgn(paramvalid & region_assigned) ); 
-
-proportion_signficant_overall = sum(areastats.nelc_sgn) / sum(areastats.nelc_valid); 
-
-% number of tuned electrodes per region if they were randomly distributed across regions
-expected_sgn_per_region_random = proportion_signficant_overall * areastats.nelc_valid; 
-
-[chi_significant, chi_p, chi_stats] = chi2gof([1:nregions]', 'Frequency',areastats.nelc_sgn, 'Expected',expected_sgn_per_region_random, 'Emin',0);
-% chi_p
-
-
-%% plotting
-if show_barplot
-
-    if newfig 
-        hfig = figure('color','w');
-    end
+    
+    % get the overall proportion of tuned electrodes with a region assigned and analyzable p values
+    %%%%% alternative computation: region_assigned = ~cellfun(@isempty,resp_temp.region); proportion_signficant_overall = mean( paramsgn(paramvalid & region_assigned) ); 
+    
+    proportion_signficant_overall = sum(areastats.nelc_sgn) / sum(areastats.nelc_valid); 
+    
+    % number of tuned electrodes per region if they were randomly distributed across regions
+    expected_sgn_per_region_random = proportion_signficant_overall * areastats.nelc_valid; 
+    
+    [chi_significant, chi_p, chi_stats] = chi2gof([1:nregions]', 'Frequency',areastats.nelc_sgn, 'Expected',expected_sgn_per_region_random, 'Emin',0);
+    % chi_p
+    
+    
+    %% plotting
+    
     hbar = bar(areastats.prop_sgn);
-
+    
     hold on
-
+    
     ebar_neg =  max(areastats.prop_sgn - areastats.ebar_lims(:,1), 0); % proportion should not go below zero 
     ebar_pos =  -areastats.prop_sgn + areastats.ebar_lims(:,2); 
     h_ebar = errorbar([1:nregions]', areastats.prop_sgn, ebar_neg, ebar_pos,'--');
     h_ebar.LineWidth = 0.8;
     h_ebar.LineStyle = 'none';
     h_ebar.Color = [0 0 0];
-
+    
     hax = gca;
     hax.XTickLabels = areastats.region;
-    hyline = yline(alpha);
+    hyline = yline(op.alpha);
     set(0, 'DefaultTextInterpreter', 'none')
-%     titlestr = [full_param_string, '..... p = ' num2str(chi_p)] ;
-    titlestr = [full_param_string];
-    htitle = title(titlestr); 
+    hbar.FaceColor = op.bar_face_color; 
 
-    hbar.FaceColor = bar_face_color; 
+    if isfield(op,'subtitle')
+        subtitle([op.subtitle, '... ', num2str(nnz(paramvalid)), ' electrodes'])
+    end
+    
+    box off
+    ylabel('fraction of electrodes tuned')
+    
+    hold off
 
 end
-
-box off
-ylabel('fraction of electrodes tuned')
-
-hold off
+   
+end
