@@ -92,7 +92,9 @@ switch proj_str
         PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', op.art_crit]; 
         PATH_FIGURES = [PATH_ART_PROTOCOL filesep 'figures']; 
         
-        artparam = bml_annot_read_tsv([PATH_ARTIFACT, filesep, 'artifact_', op.art_crit, '_params.tsv']); 
+        if any(strcmp(op.art_crit,{'E','F'})) % for artifact criteria G, we may not be saving this params file
+            artparam = bml_annot_read_tsv([PATH_ARTIFACT, filesep, 'artifact_', op.art_crit, '_params.tsv']); 
+        end
         session= bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_sessions.tsv']);
         
         % merge electrode info into one table
