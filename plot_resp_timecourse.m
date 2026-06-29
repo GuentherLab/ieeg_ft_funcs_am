@@ -200,7 +200,9 @@ for ilabel = 1:height(op.times_to_plot)
     thislabel = op.times_to_plot.varname{ilabel};
     t_thislabel = trials{:,thislabel}; % absolute times for this event on each trial
     t_post_aligntime_thislabel = t_thislabel - trials.align_time; % how long after the align time this event occurs each trial (negative if this event occurs pre-aligntime)
-    mean_post_aligntime_thislabel = mean(t_post_aligntime_thislabel); % average window size between this event and aligntime across trials 
+    
+    % need to use nanmean here because of e.g. go trials with no speech production, which would have t_prod_on==nan
+    mean_post_aligntime_thislabel = nanmean(t_post_aligntime_thislabel); % average window size between this event and aligntime across trials 
     h_xline(ilabel) = xline(mean_post_aligntime_thislabel, 'Color', op.times_to_plot.color{ilabel}); 
 
     % add text label for this timepoint
@@ -212,7 +214,7 @@ for ilabel = 1:height(op.times_to_plot)
     xproportion = [mean_post_aligntime_thislabel - xl(1)] / diff(xl);
     xcoord = ax_pos(1) + xproportion*ax_pos(3);
     ycoord = ax_pos(2) + op.y_timelabel_height*ax_pos(4);
-    annotation('textbox', [xcoord, ycoord, 0, 0], ...
+    annotation('textbox', [xcoord, ycoord, 0, 0], ...   %%% need to debug for nans
         'String', op.times_to_plot.plot_label{ilabel}, ...
         'HorizontalAlignment', alignside, ...
         'VerticalAlignment', 'middle', ...

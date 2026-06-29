@@ -1,4 +1,5 @@
  %%%% check whether there is a nonrandom distribution of significantly tuned electrodes across areas
+ % op.param can either be just the name of the param, or it can be {name, idx}, where idx is the column within the name table variable of the resp table
 
 function subs = compare_areal_tuning(resp,op)
 
@@ -9,7 +10,7 @@ field_default('op','bar_face_color', [0.5 0.5 0.5]);
 field_default('op','analyze_responsive_elcs_only',1);
 field_default('op','warn_about_unassigned_elcs',0); 
 field_default('op','param','p_prod'); % this variable should generally be defined by calling func; project-specific
-field_default('op','full_param_string',op.param); % change the display name of the param - default to its name in resp table
+
 
 field_default('op','separate_individual_subs',0); 
     field_default('op','n_subs_per_row',4); 
@@ -45,12 +46,20 @@ if op.analyze_responsive_elcs_only || ~ismember('rspv',resp.Properties.VariableN
 elseif ~op.analyze_responsive_elcs_only
     rows_to_analyze = 1:height(resp); 
 end
-resp.paramvals = resp{:,op.param};
+
+if iscell(op.param) % if we need to select only 1 column from the table variable
+    resp.paramvals = resp{:,op.param{1}}(:,op.param{2});
+    field_default('op','full_param_string',[op.param{1}, '_', num2str(op.param{2})]); % display name of the param - default to its name in resp table with index number
+else
+    resp.paramvals = resp{:,op.param};
+    field_default('op','full_param_string',op.param); % display name of the param - default to its name in resp table
+end
+    
+    
 resp_temp = resp(rows_to_analyze,:);
 
-
+subs = table(sort(unique(resp.sub)),'VariableNames',{'sub'}); 
 if op.separate_individual_subs
-    subs = table(sort(unique(resp.sub)),'VariableNames',{'sub'}); 
     nsubs = height(subs);
     ncols = op.n_subs_per_row;
     nrows = ceil([nsubs+1]/ncols);
