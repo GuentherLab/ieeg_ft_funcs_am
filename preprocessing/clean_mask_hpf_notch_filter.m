@@ -84,7 +84,7 @@ end
 
 
 
-%% AM proposal for changing this section: apply the manul mask, then use function hpf_and_instantaneous_artifact_mask rather than recreating that code here
+%% AM proposal for changing this section: apply the manual mask, then use function hpf_and_instantaneous_artifact_mask rather than recreating that code here
 
 % for each electrode, set value to zero from starts:end
 for i_t = 1:size(t,1)
@@ -129,7 +129,7 @@ cfg.dftfreq           = [60 120 180 240 300 360 420 480];
 cfg.dftbandwidth      = [1   1   1   1   1   1   1   1];
 cfg.dftneighbourwidth = [2   2   2   2   2   2   2   2];
 
-if 0 %% AM: I tried using this option, but I force quit after it got stuck running after 15mins [second option ran in just a few mins]
+if 1 %% RD note: this should take <15mins
     F = cfg.dftfreq;
     N = D_annot.nSamples2;
     Fs = D_annot.Fs;
@@ -139,7 +139,7 @@ if 0 %% AM: I tried using this option, but I force quit after it got stuck runni
     newF = reshape(newF,1,[]);
     % newF = [newF cfg.dftfreq(2:end)];
     cfg.dftfreq = newF;
-elseif 1
+elseif 0
     cfg.dftreplace='neighbour';
     cfg.dftbandwidth      = 0.05 * [ 1   1   1   1   1   1   1   1];
     cfg.dftneighbourwidth = 0.05 * [ 2   2   2   2   2   2   2   2];
