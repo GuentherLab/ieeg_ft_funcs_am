@@ -42,10 +42,10 @@ elseif ~isempty(D_eltype.label)
       cfg1.wav_freq = wav_freqs(ifreq);
       cfg1.wav_width = wav_width;
       if cfg.suppress_output
-        cmd  = 'D_multifreq_eltype{ifreq} = bml_envelope_wavpow(cfg1,D_eltype);';
+        cmd  = 'D_multifreq_eltype{ifreq} = envelope_wavpow(cfg1,D_eltype);';
         evalc(cmd); % use evalc to suppress console output
       elseif ~cfg.suppress_output
-        D_multifreq_eltype{ifreq} = bml_envelope_wavpow(cfg1,D_eltype);
+        D_multifreq_eltype{ifreq} = envelope_wavpow(cfg1,D_eltype);
       end
       
       nchannels = length(D_multifreq_eltype{ifreq}.label);
