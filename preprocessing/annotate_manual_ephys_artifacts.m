@@ -106,28 +106,6 @@ time_vec  = D.time{1};          % [1   x nTime]
 ch_labels = cellstr(D.label);   % {nCh x 1}
 n_chans   = size(data_mat,1);
 
-% Run external cleaning function with visible modal dialog box notification
-fprintf('  Running initial data cleaning...\n');
-dlg_clean = dialog('Name', 'Cleaning Data', 'Position', [500 500 280 80]);
-uicontrol(dlg_clean, 'Style', 'text', 'Position', [20 20 240 40], ...
-    'String', 'Initial data cleaning function is running. Please wait...', ...
-    'FontSize', 10, 'HorizontalAlignment', 'center');
-drawnow;
-
-t_clean0 = datetime('now');
-try
-    [D_cleaned, cleaning_func_cfg_out] = hpf_and_instantaneous_artifact_mask(D);
-    data_mat_clean = D_cleaned.trial{1};
-catch ME
-    if isgraphics(dlg_clean), close(dlg_clean); end
-    errordlg(sprintf('Cleaning function failed:\n%s', ME.message), 'Cleaning Error');
-    return;
-end
-if isgraphics(dlg_clean), close(dlg_clean); end
-
-t_clean1 = datetime('now');
-fprintf('  Cleaning done: %.2f s\n\n', seconds(t_clean1 - t_clean0));
-
 %==========================================================================
 %% 3.  Shared state  (accessed/modified by nested functions)
 %==========================================================================
@@ -142,6 +120,12 @@ custom_ylim = [];
 % Trace Scaling values
 raw_scale_val = 1.0;
 clean_scale_val = 1.0;
+notch_scale_val = 1.0;
+
+% Processed data targets
+data_mat_clean = [];
+data_mat_notch = [];
+
 % Artifact table
 artifact = table( ...
     zeros(0,1,'double'), zeros(0,1,'double'), ...
@@ -160,7 +144,13 @@ CMAPS = {'parula','turbo','jet','hsv','hot','cool','spring','summer', ...
 cur_cmap   = 'parula';
 
 %==========================================================================
-%% 4.  Build figure & controls
+%% 4.  Pre-compute Initial Data & Display Variables
+%==========================================================================
+fprintf('  Running initial data processing...\n');
+cleaning_func_cfg_out = compute_processed_traces(true);
+
+%==========================================================================
+%% 5.  Build figure & controls
 %==========================================================================
 LP_W = 0.19;   % fractional figure width for left panel
 fig = figure( ...
@@ -189,16 +179,20 @@ btn_view = uicontrol(lp,'Style','pushbutton', ...
     'Units','normalized','Position',[0.05 yp_ 0.90 ch_], ...
     'Callback',@(~,~) viewmode_cb());
 
-% Fixed Legend Control (Split into two text boxes to avoid HTML completely)
+% Fixed Legend Control (Split into three text boxes to avoid HTML completely)
 yp_ = ny_-ch_; ny_ = ny_-dh_;
-uicontrol(lp,'Style','text','String','Traces: Black = Raw,', ...
-    'Units','normalized','Position',[0.05 yp_ 0.50 ch_], ...
-    'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87], ...
+uicontrol(lp,'Style','text','String','Black=Raw', ...
+    'Units','normalized','Position',[0.02 yp_ 0.30 ch_], ...
+    'HorizontalAlignment','center','BackgroundColor',[0.87 0.87 0.87], ...
     'FontWeight','bold', 'ForegroundColor','k');
-uicontrol(lp,'Style','text','String','Blue = Cleaned', ...
-    'Units','normalized','Position',[0.56 yp_ 0.39 ch_], ...
-    'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87], ...
+uicontrol(lp,'Style','text','String','Blue=Clean', ...
+    'Units','normalized','Position',[0.33 yp_ 0.30 ch_], ...
+    'HorizontalAlignment','center','BackgroundColor',[0.87 0.87 0.87], ...
     'FontWeight','bold', 'ForegroundColor',[0 0 0.8]);
+uicontrol(lp,'Style','text','String','Red=Notched', ...
+    'Units','normalized','Position',[0.64 yp_ 0.34 ch_], ...
+    'HorizontalAlignment','center','BackgroundColor',[0.87 0.87 0.87], ...
+    'FontWeight','bold', 'ForegroundColor',[0.6 0 0]);
 
 % Display Sample Rate Sub-Legend Text Box
 yp_ = ny_-ch_; ny_ = ny_-dh_;
@@ -233,28 +227,48 @@ uicontrol(lp,'Style','pushbutton','String','Update Chans', ...
     'Units','normalized','Position',[0.05 yp_ 0.90 ch_],'Callback',@update_chans_cb);
 ny_ = ny_ - 0.010;   % spacer
 
-% Trace Scaling Controls
+% Trace Scaling & Visibility Controls
+% RAW
 yp_ = ny_-ch_; ny_ = ny_-dh_;
-uicontrol(lp,'Style','text','String','Raw scaling:', ...
-    'Units','normalized','Position',[0.05 yp_ 0.45 ch_], ...
+uicontrol(lp,'Style','text','String','Raw scale:', ...
+    'Units','normalized','Position',[0.02 yp_ 0.38 ch_], ...
     'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87]);
 ed_raw_scale = uicontrol(lp,'Style','text','String',num2str(raw_scale_val,'%.2f'), ...
-    'Units','normalized','Position',[0.50 yp_ 0.15 ch_], 'BackgroundColor','w');
+    'Units','normalized','Position',[0.40 yp_ 0.15 ch_], 'BackgroundColor','w');
 uicontrol(lp,'Style','pushbutton','String','▲', ...
-    'Units','normalized','Position',[0.68 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('raw', 0.25));
+    'Units','normalized','Position',[0.57 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('raw', 0.25));
 uicontrol(lp,'Style','pushbutton','String','▼', ...
-    'Units','normalized','Position',[0.82 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('raw', -0.25));
+    'Units','normalized','Position',[0.70 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('raw', -0.25));
+btn_vis_raw = uicontrol(lp,'Style','pushbutton','String','✓', ...
+    'Units','normalized','Position',[0.84 yp_ 0.12 ch_],'Callback',@toggle_vis_cb);
 
+% CLEANED
 yp_ = ny_-ch_; ny_ = ny_-dh_;
-uicontrol(lp,'Style','text','String','Cleaned scaling:', ...
-    'Units','normalized','Position',[0.05 yp_ 0.45 ch_], ...
+uicontrol(lp,'Style','text','String','Cleaned scale:', ...
+    'Units','normalized','Position',[0.02 yp_ 0.38 ch_], ...
     'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87]);
 ed_clean_scale = uicontrol(lp,'Style','text','String',num2str(clean_scale_val,'%.2f'), ...
-    'Units','normalized','Position',[0.50 yp_ 0.15 ch_], 'BackgroundColor','w');
+    'Units','normalized','Position',[0.40 yp_ 0.15 ch_], 'BackgroundColor','w');
 uicontrol(lp,'Style','pushbutton','String','▲', ...
-    'Units','normalized','Position',[0.68 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('clean', 0.25));
+    'Units','normalized','Position',[0.57 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('clean', 0.25));
 uicontrol(lp,'Style','pushbutton','String','▼', ...
-    'Units','normalized','Position',[0.82 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('clean', -0.25));
+    'Units','normalized','Position',[0.70 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('clean', -0.25));
+btn_vis_clean = uicontrol(lp,'Style','pushbutton','String','✓', ...
+    'Units','normalized','Position',[0.84 yp_ 0.12 ch_],'Callback',@toggle_vis_cb);
+
+% NOTCHED
+yp_ = ny_-ch_; ny_ = ny_-dh_;
+uicontrol(lp,'Style','text','String','Notch scale:', ...
+    'Units','normalized','Position',[0.02 yp_ 0.38 ch_], ...
+    'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87]);
+ed_notch_scale = uicontrol(lp,'Style','text','String',num2str(notch_scale_val,'%.2f'), ...
+    'Units','normalized','Position',[0.40 yp_ 0.15 ch_], 'BackgroundColor','w');
+uicontrol(lp,'Style','pushbutton','String','▲', ...
+    'Units','normalized','Position',[0.57 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('notch', 0.25));
+uicontrol(lp,'Style','pushbutton','String','▼', ...
+    'Units','normalized','Position',[0.70 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('notch', -0.25));
+btn_vis_notch = uicontrol(lp,'Style','pushbutton','String','✓', ...
+    'Units','normalized','Position',[0.84 yp_ 0.12 ch_],'Callback',@toggle_vis_cb);
 ny_ = ny_ - 0.010;   % spacer
 
 % Channel groups navigation
@@ -309,21 +323,21 @@ tt_iqr   = 'threshold to identify outliers (e.g. outlier > 75th percentile + iqr
 tt_fc    = 'Cutoff frequency for high-pass filter';
 
 uicontrol(pnl_clean,'Style','text','String','Expected spike dur (s):', ...
-    'Units','normalized','Position',[0.02 0.73 0.65 0.20], ...
+    'Units','normalized','Position',[0.02 0.76 0.65 0.20], ...
     'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87], ...
     'TooltipString', tt_spike);
 ed_spike_dur = uicontrol(pnl_clean,'Style','edit', ...
     'String',num2str(cleaning_func_cfg_out.spike_dur), ...
-    'Units','normalized','Position',[0.70 0.73 0.25 0.20], ...
+    'Units','normalized','Position',[0.70 0.76 0.25 0.20], ...
     'TooltipString', tt_spike);
 
 uicontrol(pnl_clean,'Style','text','String','Outlier IQR threshold:', ...
-    'Units','normalized','Position',[0.02 0.48 0.65 0.20], ...
+    'Units','normalized','Position',[0.02 0.52 0.65 0.20], ...
     'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87], ...
     'TooltipString', tt_iqr);
 ed_iqr_thr = uicontrol(pnl_clean,'Style','edit', ...
     'String',num2str(cleaning_func_cfg_out.iqr_thr), ...
-    'Units','normalized','Position',[0.70 0.48 0.25 0.20], ...
+    'Units','normalized','Position',[0.70 0.52 0.25 0.20], ...
     'TooltipString', tt_iqr);
 
 init_fc = '0';
@@ -332,17 +346,21 @@ if isfield(cleaning_func_cfg_out, 'f_c')
 end
 
 uicontrol(pnl_clean,'Style','text','String','High pass cutoff (Hz):', ...
-    'Units','normalized','Position',[0.02 0.23 0.65 0.20], ...
+    'Units','normalized','Position',[0.02 0.28 0.65 0.20], ...
     'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87], ...
     'TooltipString', tt_fc);
 ed_fc = uicontrol(pnl_clean,'Style','edit', ...
     'String',init_fc, ...
-    'Units','normalized','Position',[0.70 0.23 0.25 0.20], ...
+    'Units','normalized','Position',[0.70 0.28 0.25 0.20], ...
     'TooltipString', tt_fc);
 
-uicontrol(pnl_clean,'Style','pushbutton','String','Update cleaned traces', ...
-    'Units','normalized','Position',[0.05 0.02 0.90 0.18], ...
-    'Callback',@update_clean_cb);
+uicontrol(pnl_clean,'Style','pushbutton','String','Update traces', ...
+    'Units','normalized','Position',[0.05 0.04 0.45 0.18], ...
+    'Callback',@(~,~) compute_processed_traces(false));
+
+chk_manual_mask = uicontrol(pnl_clean,'Style','checkbox','String','Include masks', ...
+    'Units','normalized','Position',[0.52 0.04 0.45 0.18], ...
+    'BackgroundColor',[0.87 0.87 0.87], 'Value', 0);
 
 % Data Selection Info Banner
 txt_sel_info = uicontrol(fig, 'Style','text', 'Units','normalized', ...
@@ -355,8 +373,17 @@ ax = axes(fig,'Units','normalized', ...
     'Position',[LP_W+0.04, 0.09, 1-LP_W-0.06, 0.87]);
 
 %==========================================================================
-%% 5.  Initialise display
+%% 6.  Initialise display
 %==========================================================================
+% Auto-load existing artifacts if present
+annot_dir = fullfile('Y:\DBS','derivatives',['sub-' cfg.sub],'annot');
+auto_art_file = sprintf('sub-%s_ses-intraop_task-%s_artifact-manual.tsv', cfg.sub, cfg.task);
+auto_art_path = fullfile(annot_dir, auto_art_file);
+if exist(auto_art_path, 'file')
+    fprintf('  Auto-loading manual artifact file...\n');
+    load_artifact_file(auto_art_path);
+end
+
 update_viewmode_button();
 update_chunk_dropdown();
 update_plot();
@@ -365,9 +392,85 @@ update_plot();
 %%   ═══════════  N E S T E D   F U N C T I O N S  ═══════════
 %==========================================================================
 
+% ── Process Filtering (Clean + Notch) ─────────────────────────────────────
+    function [cfg_out] = compute_processed_traces(is_init)
+        if nargin < 1, is_init = false; end
+        
+        if ~is_init
+            set(fig, 'pointer', 'watch'); drawnow;
+        end
+        
+        dlg = dialog('Name', 'Please wait', 'Position', [500 500 250 80]);
+        txt_dlg = uicontrol(dlg, 'Style', 'text', 'Position', [20 20 210 40], ...
+            'String', 'Updating traces... 0.0 s', 'FontSize', 10);
+        t0 = tic;
+        tmr = timer('ExecutionMode','fixedSpacing', 'Period',0.1, ...
+                    'TimerFcn', @(~,~) update_stopwatch_dlg(txt_dlg, t0));
+        start(tmr);
+
+        try
+            cfg_clean = struct();
+            if ~is_init
+                cfg_clean.spike_dur = str2double(ed_spike_dur.String);
+                cfg_clean.iqr_thr = str2double(ed_iqr_thr.String);
+                cfg_clean.f_c = str2double(ed_fc.String);
+                if chk_manual_mask.Value == 1
+                    cfg_clean.add_mask = true;
+                    cfg_clean.mask_table = artifact;
+                else
+                    cfg_clean.add_mask = false;
+                end
+            end
+            
+            % 1. Cleaned & HPF
+            [D_cleaned_new, cfg_out] = hpf_and_instantaneous_artifact_mask(D, cfg_clean);
+            data_mat_clean = D_cleaned_new.trial{1};
+            % Safeguard against dimension transposition bugs
+            if size(data_mat_clean, 2) < size(data_mat_clean, 1)
+                data_mat_clean = data_mat_clean';
+            end
+            
+            % 2. Notch Harmonics Filtering
+            cfg_notch_filt = [];
+            [D_notched_new, ~] = notch_harmonics_filter(D_cleaned_new, cfg_notch_filt);
+            data_mat_notch = D_notched_new.trial{1};
+            % Safeguard against dimension transposition bugs
+            if size(data_mat_notch, 2) < size(data_mat_notch, 1)
+                data_mat_notch = data_mat_notch';
+            end
+            
+        catch ME
+            stop(tmr); delete(tmr);
+            if isgraphics(dlg), close(dlg); end
+            if ~is_init, set(fig, 'pointer', 'arrow'); end
+            errordlg(sprintf('Processing failed:\n%s', ME.message), 'Processing Error');
+            cfg_out = [];
+            return;
+        end
+        
+        stop(tmr); delete(tmr);
+        if isgraphics(dlg), close(dlg); end
+        
+        if ~is_init
+            set(fig, 'pointer', 'arrow');
+            ed_spike_dur.String = num2str(cfg_out.spike_dur);
+            ed_iqr_thr.String = num2str(cfg_out.iqr_thr);
+            if isfield(cfg_out, 'f_c')
+                ed_fc.String = num2str(cfg_out.f_c);
+            end
+            update_plot();
+        end
+    end
+
+    function update_stopwatch_dlg(txt_dlg, t0)
+        if isgraphics(txt_dlg)
+            el = toc(t0);
+            txt_dlg.String = sprintf('Updating traces...\nElapsed time: %.1f s', el);
+        end
+    end
+
 % ── Mouse Scroll Wheel Zoom Callback ──────────────────────────────────────
     function scroll_zoom_cb(~, event)
-        % Validate that the cursor is directly positioned over the data traces
         cp = ax_coords_clamped();
         if isempty(cp), return; end 
         
@@ -379,21 +482,19 @@ update_plot();
         
         width = diff(xl);
         mouse_x = cp(1);
-        pct = (mouse_x - xl(1)) / width; % Track relative anchor percentage
+        pct = (mouse_x - xl(1)) / width; 
         
-        zoom_factor = 0.15; % Standard 15% zoom steps
+        zoom_factor = 0.15; 
         if event.VerticalScrollCount > 0
-            new_width = width * (1 + zoom_factor); % Scroll down = Zoom out
+            new_width = width * (1 + zoom_factor); 
         else
-            new_width = width * (1 - zoom_factor); % Scroll up = Zoom in
+            new_width = width * (1 - zoom_factor); 
         end
         
-        % Ensure zoom ranges remain structurally bounded
         total_dur = time_vec(end) - time_vec(1);
         if new_width > total_dur * 5, new_width = total_dur * 5; end
         if new_width < 0.01, new_width = 0.01; end
         
-        % Readjust limits focused squarely around the pointer coordinate
         custom_xlim = [mouse_x - pct * new_width, mouse_x + (1 - pct) * new_width];
         update_plot();
     end
@@ -459,73 +560,30 @@ update_plot();
         end
     end
 
-% ── Trace Scaling ─────────────────────────────────────────────────────────
+% ── Trace Visibility & Scaling ────────────────────────────────────────────
+    function toggle_vis_cb(src, ~)
+        if strcmp(src.String, '✓')
+            src.String = 'X';
+            src.ForegroundColor = 'r';
+        else
+            src.String = '✓';
+            src.ForegroundColor = 'k';
+        end
+        update_plot();
+    end
+
     function scale_cb(type, delta)
         if strcmp(type, 'raw')
             raw_scale_val = max(0.1, raw_scale_val + delta);
             ed_raw_scale.String = num2str(raw_scale_val, '%.2f');
-        else
+        elseif strcmp(type, 'clean')
             clean_scale_val = max(0.1, clean_scale_val + delta);
             ed_clean_scale.String = num2str(clean_scale_val, '%.2f');
+        elseif strcmp(type, 'notch')
+            notch_scale_val = max(0.1, notch_scale_val + delta);
+            ed_notch_scale.String = num2str(notch_scale_val, '%.2f');
         end
         update_plot();
-    end
-
-% ── Dynamic Cleaning Config Adjustments ───────────────────────────────────
-    function update_clean_cb(~,~)
-        cfg_clean = struct();
-        val_spike = str2double(ed_spike_dur.String);
-        val_iqr = str2double(ed_iqr_thr.String);
-        val_fc = str2double(ed_fc.String);
-        
-        if isnan(val_spike) || isnan(val_iqr) || isnan(val_fc)
-            errordlg('Invalid cleaning parameters (must be numeric).','Invalid Input');
-            return;
-        end
-        
-        cfg_clean.spike_dur = val_spike;
-        cfg_clean.iqr_thr = val_iqr;
-        cfg_clean.f_c = val_fc;
-        
-        set(fig, 'pointer', 'watch'); drawnow;
-        
-        dlg = dialog('Name', 'Please wait', 'Position', [500 500 250 80]);
-        txt_dlg = uicontrol(dlg, 'Style', 'text', 'Position', [20 20 210 40], ...
-            'String', 'Updating cleaned traces... 0.0 s', 'FontSize', 10);
-        t0 = tic;
-        tmr = timer('ExecutionMode','fixedSpacing', 'Period',0.1, ...
-                    'TimerFcn', @(~,~) update_stopwatch_dlg(txt_dlg, t0));
-        start(tmr);
-
-        try
-            [D_cleaned_new, cfg_out_new] = hpf_and_instantaneous_artifact_mask(D, cfg_clean);
-            data_mat_clean = D_cleaned_new.trial{1};
-            
-            ed_spike_dur.String = num2str(cfg_out_new.spike_dur);
-            ed_iqr_thr.String = num2str(cfg_out_new.iqr_thr);
-            if isfield(cfg_out_new, 'f_c')
-                ed_fc.String = num2str(cfg_out_new.f_c);
-            end
-        catch ME
-            stop(tmr); delete(tmr);
-            if isgraphics(dlg), close(dlg); end
-            set(fig, 'pointer', 'arrow');
-            errordlg(sprintf('Cleaning function failed:\n%s', ME.message), 'Cleaning Error');
-            return;
-        end
-        
-        stop(tmr); delete(tmr);
-        if isgraphics(dlg), close(dlg); end
-        
-        set(fig, 'pointer', 'arrow');
-        update_plot();
-    end
-
-    function update_stopwatch_dlg(txt_dlg, t0)
-        if isgraphics(txt_dlg)
-            el = toc(t0);
-            txt_dlg.String = sprintf('Updating cleaned traces...\nElapsed time: %.1f s', el);
-        end
     end
 
 % ── Axis Render Routines ──────────────────────────────────────────────────
@@ -537,6 +595,10 @@ update_plot();
         vis   = get_vis_chans();
         n_vis = numel(vis);
 
+        show_raw   = strcmp(btn_vis_raw.String, '✓');
+        show_clean = strcmp(btn_vis_clean.String, '✓');
+        show_notch = strcmp(btn_vis_notch.String, '✓');
+
         % ── RASTER MODE ──
         if strcmp(viewmode,'raster')
             set(lbl_cmap,'Visible','on');
@@ -544,13 +606,25 @@ update_plot();
             set(txt_fs_display, 'Visible', 'off');
             
             vis_data = double(data_mat(vis,:));
+            % Downsample Raster safely to prevent 1M+ column GPU crash
+            n_samples = size(vis_data, 2);
+            max_raster_pts = 4000;
+            if n_samples > max_raster_pts
+                ds_r = ceil(n_samples / max_raster_pts);
+                vis_data = vis_data(:, 1:ds_r:end);
+            end
+            
             for i = 1:size(vis_data,1)
                 s = std(vis_data(i,:));
                 if s < eps('single'), s = 1; end
                 vis_data(i,:) = (vis_data(i,:) - mean(vis_data(i,:))) / s;
             end
-            imagesc(ax, time_vec, 1:n_vis, vis_data);
+            
+            % Map raster spatially to X limit range instead of 1M+ element discrete array
+            x_lims = [time_vec(1), time_vec(end)];
+            imagesc(ax, x_lims, [1 n_vis], vis_data);
             colormap(ax, cur_cmap);
+            
             try 
                 cbh = colorbar(ax); 
                 cbh.FontSize = 8; 
@@ -580,21 +654,24 @@ update_plot();
             set(dd_cmap, 'Visible','off');
             set(txt_fs_display, 'Visible', 'on');
             
-            % Compute original sample rate from data fields
-            dt = mean(diff(time_vec));
+            % Compute original sample rate safely
+            n_pts = numel(time_vec);
+            dt = mean(diff(time_vec(1:min(1000, end))));
             orig_fs = 1 / dt;
             
             % Downsample if rate exceeds the configured maximum limit
             if orig_fs > op.max_timecourse_sample_rate
                 ds = max(1, round(orig_fs / op.max_timecourse_sample_rate));
-                t_d  = time_vec(1:ds:end);
-                idx_ = 1:ds:numel(time_vec);
+                idx_ = 1:ds:n_pts;
                 display_fs = orig_fs / ds;
             else
-                t_d  = time_vec;
-                idx_ = 1:numel(time_vec);
+                idx_ = 1:n_pts;
                 display_fs = orig_fs;
             end
+            
+            % Force mathematically strictly to 1xM row vectors
+            t_d = time_vec(idx_);
+            t_d = t_d(:)'; 
             
             set(txt_fs_display, 'String', sprintf('Sample Rate: %.1f Hz', display_fs));
             
@@ -617,20 +694,49 @@ update_plot();
             end
             
             for ki = 1:n_vis
-                sig       = double(data_mat(vis(ki), idx_));
-                sig_clean = double(data_mat_clean(vis(ki), idx_));
                 
-                s = std(sig(:));
-                if s < eps('single'), s = 1; end
+                % Process and plot Raw trace dynamically
+                if show_raw && ~isempty(data_mat)
+                    len_raw = size(data_mat, 2);
+                    idx_raw = idx_(idx_ <= len_raw);
+                    if ~isempty(idx_raw)
+                        sig = double(data_mat(vis(ki), idx_raw));
+                        sig = sig(:)'; % Force row vector
+                        s = std(sig);
+                        if s < eps('single'), s = 1; end
+                        sig_n = (sig - mean(sig)) ./ (6*s) * raw_scale_val + ki;
+                        plot(ax, t_d(1:numel(idx_raw)), sig_n, 'Color','k', 'LineWidth',0.5);
+                    end
+                end
                 
-                s_clean = std(sig_clean(:));
-                if s_clean < eps('single'), s_clean = 1; end
+                % Process and plot Clean trace dynamically
+                if show_clean && ~isempty(data_mat_clean)
+                    len_clean = size(data_mat_clean, 2);
+                    idx_clean = idx_(idx_ <= len_clean);
+                    if ~isempty(idx_clean)
+                        sig_clean = double(data_mat_clean(vis(ki), idx_clean));
+                        sig_clean = sig_clean(:)'; % Force row vector
+                        s_clean = std(sig_clean);
+                        if s_clean < eps('single'), s_clean = 1; end
+                        sig_clean_n = (sig_clean - mean(sig_clean)) ./ (6*s_clean) * clean_scale_val + ki;
+                        plot(ax, t_d(1:numel(idx_clean)), sig_clean_n, 'Color','b', 'LineWidth',0.5);
+                    end
+                end
                 
-                sig_n       = (sig       - mean(sig))       ./ (6*s)       * raw_scale_val   + ki;
-                sig_clean_n = (sig_clean - mean(sig_clean)) ./ (6*s_clean) * clean_scale_val + ki;
+                % Process and plot Notch trace dynamically
+                if show_notch && ~isempty(data_mat_notch)
+                    len_notch = size(data_mat_notch, 2);
+                    idx_notch = idx_(idx_ <= len_notch);
+                    if ~isempty(idx_notch)
+                        sig_notch = double(data_mat_notch(vis(ki), idx_notch));
+                        sig_notch = sig_notch(:)'; % Force row vector
+                        s_notch = std(sig_notch);
+                        if s_notch < eps('single'), s_notch = 1; end
+                        sig_notch_n = (sig_notch - mean(sig_notch)) ./ (6*s_notch) * notch_scale_val + ki;
+                        plot(ax, t_d(1:numel(idx_notch)), sig_notch_n, 'Color',[0.6 0 0], 'LineWidth',0.5);
+                    end
+                end
                 
-                plot(ax, t_d, sig_n,       'Color','k', 'LineWidth',0.5);
-                plot(ax, t_d, sig_clean_n, 'Color','b', 'LineWidth',0.5);
             end
         end
 
@@ -996,7 +1102,29 @@ update_plot();
         update_plot();
     end
 
-% ── Load Artifact Mask ────────────────────────────────────────────────────
+% ── Load Artifact File Master ─────────────────────────────────────────────
+    function load_artifact_file(fpath)
+        try
+            al = readtable(fpath, 'FileType','text','Delimiter','\t','TextType','string');
+            probs = validate_art_table(al);
+            if ~isempty(probs)
+                errordlg(['Validation failed:' newline strjoin(probs,newline)], ...
+                    'Invalid Artifact Table');
+                return;
+            end
+            req={'starts','ends','duration','label'};
+            xtra=setdiff(al.Properties.VariableNames,req);
+            for k=1:numel(xtra), al.(xtra{k})=[]; end
+            al.label=string(al.label);
+            al.id   =zeros(height(al),1,'double');
+            al=al(:,{'id','starts','ends','duration','label'});
+            combine_artifact_tables(al);
+        catch ME
+            errordlg(sprintf('Cannot read file:\n%s',ME.message),'Load Error');
+        end
+    end
+
+% ── Manual Load Artifact Mask ─────────────────────────────────────────────
     function load_artifact_cb(~,~)
         if height(artifact)>0
             btn=questdlg( ...
@@ -1022,26 +1150,7 @@ update_plot();
             end
         end
 
-        try
-            al=readtable(fullfile(fdir,fname), ...
-                'FileType','text','Delimiter','\t','TextType','string');
-        catch ME
-            errordlg(sprintf('Cannot read file:\n%s',ME.message),'Load Error');
-            return;
-        end
-        probs=validate_art_table(al);
-        if ~isempty(probs)
-            errordlg(['Validation failed:' newline strjoin(probs,newline)], ...
-                'Invalid Artifact Table');
-            return;
-        end
-        req={'starts','ends','duration','label'};
-        xtra=setdiff(al.Properties.VariableNames,req);
-        for k=1:numel(xtra), al.(xtra{k})=[]; end
-        al.label=string(al.label);
-        al.id   =zeros(height(al),1,'double');
-        al=al(:,{'id','starts','ends','duration','label'});
-        combine_artifact_tables(al);
+        load_artifact_file(fullfile(fdir, fname));
     end
 
     function probs=validate_art_table(T)

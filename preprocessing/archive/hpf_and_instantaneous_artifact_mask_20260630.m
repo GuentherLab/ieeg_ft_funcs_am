@@ -7,12 +7,8 @@ vardefault('cfg',struct);
 field_default('cfg', 'spike_dur', 0.1); % estimated duration of a spike artifact in seconds, from spike onset to peak
 field_default('cfg', 'iqr_thr', 3); % threshold to identify outliers (e.g. outlier > 75th percentile + iqr_thr*interquartile range)
 field_default('cfg', 'f_c', 2); % % Cutoff frequency for high-pass filter
-
-% if doing masking, the artifact table must have variables 'starts','end','label'
-%   times should be in global time coordinates (GTC), like in fieldtrip .time field
-%   'label' must match one channel in fieldtrip .label field
-field_default('cfg','add_mask',false); % if true, mask out values specified by cfg.mask_table
-    field_default('cfg','mask_table',table); % either .tsv filename of artifact table, or the table variable itself... default = empty
+field_default('cfg','do_pre_mask',false); % if true, mask out values specified 
+    field_default('cfg','mask_table'); % 
 
 D_out = D; 
 
@@ -30,41 +26,6 @@ qart_diff = prctile(diff_sig_smoothed, [25; 75], 2);
 % RECONSTRUCTED SIGNAL
 diff_sig_mask = diff_sig_smoothed > qart_diff(:,2)+cfg.iqr_thr*iqr_diff | diff_sig_smoothed < qart_diff(:,1)-cfg.iqr_thr*iqr_diff; % crops derivatives beyond minimum/maximum values
 diff_sig(diff_sig_mask) = 0;
-
-
-
-%% AM added this section (copied from clean_mask_hpf_notch_filter.m for optional masking - ....check w/ Rohan - why is the mask applied here and not earlier?  
-if cfg.add_mask
-    if ischar(cfg.mask_table) || isstring(cfg.mask_table)
-        added_mask_table = readtable(cfg.mask_table, "FileType","text",'Delimiter', '\t');
-    else
-        added_mask_table = cfg.mask_table;
-    end
-
-    % convert global time to samples
-    added_mask_table.starts_idx = zeros(size(added_mask_table.starts));
-    added_mask_table.ends_idx = zeros(size(added_mask_table.ends));
-    for i_t = 1:size(added_mask_table,1)
-        [~, added_mask_table.starts_idx(i_t)] = min(abs(added_mask_table.starts(i_t) - D_out.time{1}));
-        [~, added_mask_table.ends_idx(i_t)] = min(abs(added_mask_table.ends(i_t) - D_out.time{1}));
-    end
-    
-    % for each electrode, set value to zero from starts:end
-    for i_t = 1:size(added_mask_table,1)
-        diff_sig(strcmp(D_out.label, added_mask_table.label(i_t)), added_mask_table.starts_idx(i_t):added_mask_table.ends_idx(i_t)) = 0;
-    end
-
-end
-%% end of added section
-%% 
-
-
-
-
-
-
-
-
 
 og_sig = cumsum([zeros(size(diff_sig,1),1), diff_sig],2);   % reconstructs original signal by cumulative sum (temporal integral)
 
