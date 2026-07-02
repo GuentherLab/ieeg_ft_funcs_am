@@ -8,7 +8,7 @@
 vardefault('op',struct);
 field_default('op','sub','DBS3012'); % triplet subject
 field_default('op','denoised',0); % 
-field_default('op','art_crit','E'); % default to high gamma 
+field_default('op','art_crit','G'); % default to high gamma 
 proj_str = regexprep(op.sub, '[0-9]', ''); % string that will tell us what project / collection site this subject is from
 
 switch op.art_crit
@@ -59,42 +59,61 @@ switch proj_str
 
         load_triplet_stim_beh_timing()
 
+        if exist(ARTIFACT_FILENAME_SUB, 'file')
+            artifact = bml_annot_read(ARTIFACT_FILENAME_SUB);  
+        end
+
     case 'DM' % MGH
         setpaths_dbs_seq()
     
-        SESSION = 'intraop';
-        TASK = 'smsl'; 
-        
+        SESSION = 'intraop'; % we're rarely interested in training/preop data - no ephys associated with it
+
         PATH_DER_SUB = [PATH_DER filesep 'sub-' op.sub];  
         PATH_PREPROC = [PATH_DER_SUB filesep 'preproc'];
         PATH_ANNOT = [PATH_DER_SUB filesep 'annot'];
-        PATH_FIELDTRIP = [PATH_DER_SUB filesep 'fieldtrip'];
-        PATH_AEC = [PATH_DER_SUB filesep 'aec']; 
-        PATH_SCORING = [PATH_DER_SUB filesep 'analysis' filesep 'task-', TASK, '_scoring'];
-        PATH_ANALYSIS = [PATH_DER_SUB filesep 'analysis'];
-        PATH_TRIAL_AUDIO = [PATH_ANALYSIS filesep 'task-', TASK, '_trial-audio'];
-        PATH_TRIAL_AUDIO_INTRAOP_GO = [PATH_TRIAL_AUDIO filesep 'ses-', SESSION, '_go-trials'];
-        PATH_TRIAL_AUDIO_INTRAOP_STOP = [PATH_TRIAL_AUDIO filesep 'ses-', SESSION, '_stop-trials']; 
-        
+        PATH_FIELDTRIP = [PATH_DER_SUB filesep 'fieldtrip']; % fieldtrip data, not fieldtrip code
+
         PATH_SRC_SUB = [PATH_SRC filesep 'sub-' op.sub];  
         PATH_SRC_SESS = [PATH_SRC_SUB filesep 'ses-' SESSION]; 
         PATH_AUDIO = [PATH_SRC_SESS filesep 'audio']; 
-        PATHS_TASK = strcat(PATH_SRC_SUB,filesep,{'ses-training';'ses-preop';'ses-intraop'},filesep,'task');
+        PATH_TASK = [PATH_SRC_SESS filesep 'task']; 
 
-        % filepath and filename for saving artifact info into subject-specific annot folder
-        ARTIFACT_FILENAME_SUB = [PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_task-' TASK '_artifact-criteria-' op.art_crit, op.denoise_string, '.tsv'];
+        % check for which main task was run
+        if any(arrayfun(@(p) ~isempty(dir(fullfile(p, "*smsl*"))), string(PATH_TASK)))
+            TASK = 'smsl'; 
+            PATH_AEC = [PATH_DER_SUB filesep 'aec']; 
+            PATH_SCORING = [PATH_DER_SUB filesep 'analysis' filesep 'task-', TASK, '_scoring'];
+            PATH_ANALYSIS = [PATH_DER_SUB filesep 'analysis'];
+            PATH_TRIAL_AUDIO = [PATH_ANALYSIS filesep 'task-', TASK, '_trial-audio'];
+            PATH_TRIAL_AUDIO_INTRAOP_GO = [PATH_TRIAL_AUDIO filesep 'ses-', SESSION, '_go-trials'];
+            PATH_TRIAL_AUDIO_INTRAOP_STOP = [PATH_TRIAL_AUDIO filesep 'ses-', SESSION, '_stop-trials']; 
+        elseif any(arrayfun(@(p) ~isempty(dir(fullfile(p, "*daf*"))), string(PATHS_TASK)))
+            TASK = 'daf';
+            PATH_TRIAL_AUDIO = [PATH_DER_SUB, filesep, 'trial-audio']; 
+        end
+
 
         % string (including filepath) at beginning of all fieldtrip filenames for this subj
         FT_FILE_PREFIX = [PATH_FIELDTRIP, filesep, 'sub-', op.sub, '_ses-' SESSION '_task-' TASK, '_ft-'];
         
         FT_RAW_FILENAME = [FT_FILE_PREFIX 'raw.mat']; 
+
+        PATH_ARTIFACT_MANUAL = [PATH_ANNOT, filesep, 'sub-' op.sub '_ses-' SESSION, '_task-',TASK, '_artifact-manual.tsv']; 
         
-        PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', op.art_crit]; 
-        PATH_FIGURES = [PATH_ART_PROTOCOL filesep 'figures']; 
-        
-        if any(strcmp(op.art_crit,{'E','F'})) % for artifact criteria G, we may not be saving this params file
-            artparam = bml_annot_read_tsv([PATH_ARTIFACT, filesep, 'artifact_', op.art_crit, '_params.tsv']); 
-        end
+        %%% these paths need to be edited or remove for criteria G
+% % % %         % filepath and filename for saving artifact info into subject-specific annot folder
+% % % %         ARTIFACT_FILENAME_SUB = [PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_task-' TASK '_artifact-criteria-' op.art_crit, op.denoise_string, '.tsv'];
+% % % % % 
+% % % % %         PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', op.art_crit]; 
+% % % % %         PATH_FIGURES = [PATH_ART_PROTOCOL filesep 'figures']; 
+% % % % %         
+% % % % %         if any(strcmp(op.art_crit,{'E','F'})) % for artifact criteria G, we may not be saving this params file
+% % % % %             artparam = bml_annot_read_tsv([PATH_ARTIFACT, filesep, 'artifact_', op.art_crit, '_params.tsv']); 
+% % % % %         end
+
+
+
+
         session= bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_sessions.tsv']);
         
         % merge electrode info into one table
@@ -111,7 +130,7 @@ switch proj_str
             electrodes = channels; 
         end
 
-        %% define trial epochs for referencing
+        %% define trial epochs for rreeferencing
         % for dbs-seq/smsl, we will use experimenter keypress for trial start/end times
         %%%%% this means no trial overlap, but generally a large time buffer before cue onset and after speech offset
         epoch = bml_annot_read_tsv([PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_task-' TASK '_annot-trials.tsv']);
@@ -133,17 +152,16 @@ switch proj_str
         epoch.duration = epoch.ends - epoch.starts; 
         clear default_trial_duration
 
+
+                %%% this var may need to be edited for criteria G
+        % % if exist(ARTIFACT_FILENAME_SUB, 'file')
+        % %     artifact = bml_annot_read(ARTIFACT_FILENAME_SUB);  
+        % % end
+
        %%
 
     otherwise
         error('Could not identify project from subject name')
 end
-
-% common variables
-if exist(ARTIFACT_FILENAME_SUB, 'file')
-    artifact = bml_annot_read(ARTIFACT_FILENAME_SUB);  
-end
-
-
 
 clear proj_str

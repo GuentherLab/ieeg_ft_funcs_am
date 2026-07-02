@@ -1,6 +1,6 @@
 function [Dtf] = wavtransform(cfg, D)
 %%
-% bml_wavtransform
+% adapted by Rohan from bml_wavtransform
 %   Performs a wavelet transform on timeseries in D.trial. Spectral
 %   decomposition is performed trial-wise, and only the amplitude is
 %   returned unless the keep_phase flag is 'yes'. If keep_amp is set to

@@ -1,6 +1,6 @@
 function env = envelope_wavpow(cfg, data)
 
-% BML_ENVELOPE_WAVPOW calculates the power of the signal by wavelet
+% adapted by Rohan from BML_ENVELOPE_WAVPOW - calculates the power of the signal by wavelet
 % decomposition
 %
 % The envelope is the power of the convolution of the signal with a Morlet

@@ -1,6 +1,6 @@
-function [ref,U] = rereference_ephys(cfg,raw)
+function [ref,U] = bml_rereference_adapted(cfg,raw)
 
-% function adapted by Rohan from bml_rereferece - added methods like SVD
+% function adapted by Rohan from bml_rereference - added methods like SVD
 
 % BML_REREFERENCE applies re-referencing scheme to raw
 %
