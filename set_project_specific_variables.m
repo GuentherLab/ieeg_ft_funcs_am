@@ -3,7 +3,7 @@
 % ... and then set paths and other variables appropriate to that site
 %%%% implemented as script rather than function so that these vars will be put directly into workspace 
 
-%% a lot of the paths that get set below can be replaced by calling setpaths_dbs_triplet and setpaths_dbs_seq
+%% a lot of the paths that get set below can be replaced by calling setpaths_dbs_triplet or setpaths_dbs_seq
 
 vardefault('op',struct);
 field_default('op','sub','DBS3012'); % triplet subject
@@ -16,6 +16,8 @@ switch op.art_crit
         op.resp_signal = 'hg'; % high gamma
     case 'F'
         op.resp_signal = 'beta';
+    case 'G' 
+        % art crit G is intended to be used for either hg or beta
 end
 
 if op.denoised

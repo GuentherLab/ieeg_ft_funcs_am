@@ -8,9 +8,6 @@ vardefault('cfg',struct);
 % modifiable parameters
 field_default('cfg','dftfreq',          [60 120 180 240 300 360 420 480]);
 field_default('cfg','notch_bandwidth_hz', 2); 
-% % % % % % field_default('cfg','dftbandwidth',     [1   1   1   1   1   1   1   1]);
-
-% % % % % % % % % % field_default('cfg','dftneighbourwidth',[2   2   2   2   2   2   2   2]);
 
 % fix the following parameters
 cfg.dftfilter='yes';
@@ -33,11 +30,6 @@ cfg1.remask_nan = true;
 cfg1.value = 0;
 D1 = bml_mask(cfg1, D1);
 
-
-%% am note: in clean_mask_hpf_notch_filter, this is where we'd run hpf and cleaning before notch filtering, but in this case the data is already cleaned+hpf'ed...
-... is it ok that we're doing masking and then jumping straight to notch filtering? 
-
-
 F = cfg.dftfreq;
 N = D_annot.nSamples2;
 Fs = D_annot.Fs;
@@ -46,7 +38,7 @@ newF = F + reshape(find(abs(1/N*Fs*(0:N-1) - F(1))< cfg.notch_bandwidth_hz /2)-1
 newF = reshape(newF,1,[]);
 cfg.dftfreq = newF;
 
-% intended to use Rohan's modified version of fieldtrip functions
+% intended to use Rohan's modified version of fieldtrip functions; this will not work right if normal FT repo is higher on your path
 D_filt = ft_preprocessing(cfg,D1);
 
 cfg_out = cfg; 

@@ -18,7 +18,7 @@ ntrials = numel(D_in.trial);
 el_type = strip(param.electrode_type{1});
 wav_width = param.wav_width(1);
 
-%selecting channels for artifact rejection
+%selecting channels
 cfg1=[];
 cfg1.channel = [el_type,'_*'];
 D_eltype = ft_selectdata(cfg1,D_in);
