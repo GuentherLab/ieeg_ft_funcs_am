@@ -70,7 +70,7 @@ og_sig = cumsum([zeros(size(diff_sig,1),1), diff_sig],2);   % reconstructs origi
 
 % HPF
 k = 1/(1 + 2*pi*cfg.f_c/D_out.fsample); % first order IIR
-for n=2:size(diff_sig,2)
+for n=2:size(og_sig,2)
     og_sig(:,n) = k*og_sig(:,n-1) + k*diff_sig(:,n-1); % HPF
 end
 
