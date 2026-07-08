@@ -4,16 +4,27 @@
     % cfg.param = row of 'parameter' table used for BML artifact rejeection
     % cfg.out_freq = sampling freq of output data (argument to bml_envelope_wavpow.m)
     % cfg.suppress_output = whether to print bml_envelope_wavpow.m output to command line
+    % cfg.mask_nan_with_zero...... if true, replace all nans with zeros; if not, all channels with any nans will have all values set to nan
+    % .......... after computing wav power, put nans back where they were originally
     %
     % D_in = fieldtrip struct with electrode data to be processed.... usually highpass filtered first
 
 function D_avg_pow_eltype = multifreq_avg_power(cfg, D_in)
 
-field_default('cfg','out_freq',100)
-field_default('cfg','suppress_output',1)
+field_default('cfg','out_freq',100);
+field_default('cfg','suppress_output',1);
+field_default('cfg','mask_nan_with_zero',1); % if true, replace all nans with zeros; if not, all channels with any nans will have all values set to nan
 
 param = cfg.param; 
 ntrials = numel(D_in.trial);
+
+if cfg.mask_nan_with_zero
+    nans_all_trials = cell(size(D_in.trial)); 
+    for itrial = 1:length(D_in.trial)
+        nans_all_trials{itrial} = isnan(D_in.trial{itrial}); % save nanmask to restore later
+        D_in.trial{itrial}(nans_all_trials{itrial}) = 0;
+    end
+end
 
 el_type = strip(param.electrode_type{1});
 wav_width = param.wav_width(1);
@@ -79,4 +90,17 @@ elseif ~isempty(D_eltype.label)
         D_avg_pow_eltype.trial{iblock} = D_avg_pow_eltype.trial{iblock}  .* med_pow_mean(:,iblock); 
     end
 
+    % if nans were replaced with zeros at the beginning, put them back
+    % requires resampling nans mask to match new size
+    if cfg.mask_nan_with_zero
+        for itrial = 1:length(D_in.trial)
+            nans_orig_this_trial = nans_all_trials{itrial}; 
+            ntimes_orig = size(nans_orig_this_trial,2); 
+            ntimes_new = size(D_avg_pow_eltype.trial{itrial},2); 
+            resampling_col_indices  = round(linspace(1,ntimes_orig,ntimes_new)); 
+
+            nans_resampled_this_trial = nans_orig_this_trial(:,resampling_col_indices); 
+            D_avg_pow_eltype.trial{itrial}(nans_resampled_this_trial) = nan;
+        end
+    end
 end
