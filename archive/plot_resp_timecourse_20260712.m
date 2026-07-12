@@ -21,79 +21,73 @@ field_default('op','y_timelabel_height',0.8); % how high up the plot to put the 
 
 field_default('op','trial_time_adj_method','median_plus_sd'); % median plus stdev
  
-[resp_align, trials, trial_conds, xtime, op] = align_timecourses(timecourses_unaligned, trials, trial_conds, op); 
+% remove trials with no response data
+non_empty_trials = ~cellfun(@isempty, timecourses_unaligned);
+trials = trials(non_empty_trials,:);
+    trial_conds = trial_conds(non_empty_trials,:); 
+timecourses_unaligned = timecourses_unaligned(non_empty_trials);
 
-function [resp_align, trials, trial_conds, xtime, op] = align_timecourses(timecourses_unaligned, trials, trial_conds, op)
 
-    % remove trials with no response data
-    non_empty_trials = ~cellfun(@isempty, timecourses_unaligned);
-    trials = trials(non_empty_trials,:);
-        trial_conds = trial_conds(non_empty_trials,:); 
-    timecourses_unaligned = timecourses_unaligned(non_empty_trials);
-    
-    
-    %% align responses using alignment times provided within trials_tmp by the wrapper function
-    % subind = string(subs.subject)==thissub; 
-    
-    ntrials = height(trials);
-     nans_tr = nan(ntrials,1); 
-    
-     trials = [trials, table(nans_tr,              nans_tr,...
-         'VariableNames',     {'tpoints_pre_onset', 'tpoints_post_onset'})];
-     
-     % compute sampling interval... assumes a static sample rate
-     op.samp_period = 1e-5 * round(1e5 * diff(trials.times{1}(1:2))); 
-     
-     %%% find trial lengths pre- and post- the alignment time
-    for itrial = 1:ntrials
-        % n timepoints before or at align_time
-        trials.tpoints_pre_onset(itrial) = nnz(trials.times{itrial} <= trials.align_time(itrial,1)); 
-        % n timepoints after align_time
-        trials.tpoints_post_onset(itrial) = nnz(trials.times{itrial} > trials.align_time(itrial,1)); 
-    end
-     
-    % pad or cut each trial to fit a specific size, so that we can align and average trials
-    switch op.trial_time_adj_method
-        case 'median_plus_sd'
-            op.n_tpoints_pre_fixed = round(median(trials.tpoints_pre_onset) + std(trials.tpoints_pre_onset)); 
-            op.n_tpoints_post_fixed = round(median(trials.tpoints_post_onset) + std(trials.tpoints_post_onset)); 
-        case 'median'
-            op.n_tpoints_pre_fixed = median(trials.tpoints_pre_onset); 
-            op.n_tpoints_post_fixed = median(trials.tpoints_post_onset); 
-        case 'max'
-            op.n_tpoints_pre_fixed = max(trials.tpoints_pre_onset); 
-            op.n_tpoints_post_fixed = max(trials.tpoints_post_onset); 
-    end
-    tpoints_tot = op.n_tpoints_pre_fixed + op.n_tpoints_post_fixed; 
-    
-    % nan-pad or cut trial windows so that they are all the same duration
-    %%% pad and cut values must be non-negative
-    resp_align = struct; 
-    resp_align.resp = NaN(ntrials, tpoints_tot); % aligned responses for this electrode; rows = trials, columns = timepoints
-    for itrial = 1:ntrials
-       pre_pad = max([0, op.n_tpoints_pre_fixed - trials.tpoints_pre_onset(itrial)]); 
-       pre_cut = max([0, -op.n_tpoints_pre_fixed + trials.tpoints_pre_onset(itrial)]); 
-       pre_inds = 1+pre_cut:trials.tpoints_pre_onset(itrial); % inds from timecourses_unaligned... if pre_cut > 0, some timepoints from this trial will not be used
-       resp_align.resp(itrial, pre_pad+1 : op.n_tpoints_pre_fixed) = timecourses_unaligned{itrial}(pre_inds); % fill in pre-onset data... fill in electrode responses starting after the padding epoch
-    
-       post_pad = max([0, op.n_tpoints_post_fixed - trials.tpoints_post_onset(itrial)]);
-       post_cut = max([0, -op.n_tpoints_post_fixed + trials.tpoints_post_onset(itrial)]); 
-       post_inds = trials.tpoints_pre_onset(itrial) +  [1 : trials.tpoints_post_onset(itrial)-post_cut]; % inds from timecourses_unaligned
-       resp_align.resp(itrial, op.n_tpoints_pre_fixed+1:end-post_pad) = timecourses_unaligned{itrial}(post_inds); % fill in post-onset data
-       
-       trials.trial_onset_adjust(itrial) = op.samp_period * [pre_pad - pre_cut]; % number of timepoints to add to time landmarks
-    end
-    resp_align.mean = mean(resp_align.resp,'omitnan'); % mean response timecourse
-    resp_align.std = std(resp_align.resp, 'omitnan'); % stdev of response timecourses
-    resp_align.std_lims = [resp_align.mean + resp_align.std; resp_align.mean - resp_align.std]; 
-    resp_align.n_nonnan_trials = sum(~isnan(resp_align.resp)); % number of usable trials for this aligned timepoint
-    resp_align.sem = resp_align.std ./ sqrt(resp_align.n_nonnan_trials);
-    resp_align.sem_lims = [resp_align.mean + resp_align.sem; resp_align.mean - resp_align.sem]; 
-    
-    xtime = 0.5 + [linspace(-op.n_tpoints_pre_fixed, -1, op.n_tpoints_pre_fixed), linspace(0, op.n_tpoints_post_fixed-1, op.n_tpoints_post_fixed)];
-    xtime = op.samp_period * xtime; 
+%% align responses using alignment times provided within trials_tmp by the wrapper function
+% subind = string(subs.subject)==thissub; 
 
-end 
+ntrials = height(trials);
+ nans_tr = nan(ntrials,1); 
+
+ trials = [trials, table(nans_tr,              nans_tr,...
+     'VariableNames',     {'tpoints_pre_onset', 'tpoints_post_onset'})];
+ 
+ % compute sampling interval... assumes a static sample rate
+ samp_period = 1e-5 * round(1e5 * diff(trials.times{1}(1:2))); 
+ 
+ %%% find trial lengths pre- and post- the alignment time
+for itrial = 1:ntrials
+    % n timepoints before or at align_time
+    trials.tpoints_pre_onset(itrial) = nnz(trials.times{itrial} <= trials.align_time(itrial,1)); 
+    % n timepoints after align_time
+    trials.tpoints_post_onset(itrial) = nnz(trials.times{itrial} > trials.align_time(itrial,1)); 
+end
+ 
+% pad or cut each trial to fit a specific size, so that we can align and average trials
+switch op.trial_time_adj_method
+    case 'median_plus_sd'
+        n_tpoints_pre_fixed = round(median(trials.tpoints_pre_onset) + std(trials.tpoints_pre_onset)); 
+        n_tpoints_post_fixed = round(median(trials.tpoints_post_onset) + std(trials.tpoints_post_onset)); 
+    case 'median'
+        n_tpoints_pre_fixed = median(trials.tpoints_pre_onset); 
+        n_tpoints_post_fixed = median(trials.tpoints_post_onset); 
+    case 'max'
+        n_tpoints_pre_fixed = max(trials.tpoints_pre_onset); 
+        n_tpoints_post_fixed = max(trials.tpoints_post_onset); 
+end
+tpoints_tot = n_tpoints_pre_fixed + n_tpoints_post_fixed; 
+
+% nan-pad or cut trial windows so that they are all the same duration
+%%% pad and cut values must be non-negative
+resp_align = struct; 
+resp_align.resp = NaN(ntrials, tpoints_tot); % aligned responses for this electrode; rows = trials, columns = timepoints
+for itrial = 1:ntrials
+   pre_pad = max([0, n_tpoints_pre_fixed - trials.tpoints_pre_onset(itrial)]); 
+   pre_cut = max([0, -n_tpoints_pre_fixed + trials.tpoints_pre_onset(itrial)]); 
+   pre_inds = 1+pre_cut:trials.tpoints_pre_onset(itrial); % inds from timecourses_unaligned... if pre_cut > 0, some timepoints from this trial will not be used
+   resp_align.resp(itrial, pre_pad+1 : n_tpoints_pre_fixed) = timecourses_unaligned{itrial}(pre_inds); % fill in pre-onset data... fill in electrode responses starting after the padding epoch
+
+   post_pad = max([0, n_tpoints_post_fixed - trials.tpoints_post_onset(itrial)]);
+   post_cut = max([0, -n_tpoints_post_fixed + trials.tpoints_post_onset(itrial)]); 
+   post_inds = trials.tpoints_pre_onset(itrial) +  [1 : trials.tpoints_post_onset(itrial)-post_cut]; % inds from timecourses_unaligned
+   resp_align.resp(itrial, n_tpoints_pre_fixed+1:end-post_pad) = timecourses_unaligned{itrial}(post_inds); % fill in post-onset data
+   
+   trials.trial_onset_adjust(itrial) = samp_period * [pre_pad - pre_cut]; % number of timepoints to add to time landmarks
+end
+resp_align.mean = mean(resp_align.resp,'omitnan'); % mean response timecourse
+resp_align.std = std(resp_align.resp, 'omitnan'); % stdev of response timecourses
+resp_align.std_lims = [resp_align.mean + resp_align.std; resp_align.mean - resp_align.std]; 
+resp_align.n_nonnan_trials = sum(~isnan(resp_align.resp)); % number of usable trials for this aligned timepoint
+resp_align.sem = resp_align.std ./ sqrt(resp_align.n_nonnan_trials);
+resp_align.sem_lims = [resp_align.mean + resp_align.sem; resp_align.mean - resp_align.sem]; 
+
+xtime = 0.5 + [linspace(-n_tpoints_pre_fixed, -1, n_tpoints_pre_fixed), linspace(0, n_tpoints_post_fixed-1, n_tpoints_post_fixed)];
+xtime = samp_period * xtime; 
 
 %% plotting
 if op.newfig
@@ -192,7 +186,7 @@ elseif isempty(op.sort_cond)
 end
 
 %%% set xlims before the next section, which queries the xlims of the axis; if they aren't set first, matlab sometimes gets confused while querying them
-xlimits = op.samp_period * [-op.n_tpoints_pre_fixed, op.n_tpoints_post_fixed]; 
+xlimits = samp_period * [-n_tpoints_pre_fixed, n_tpoints_post_fixed]; 
 xlim(xlimits)
 
 %%%% add y=0 line.... to remove, set op.yline_zero_width=0
@@ -248,7 +242,5 @@ if op.plot_raster
 %     xlabel('Time (sec)')
     ylabel('Trial')
 
-
-end
 
 end

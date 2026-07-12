@@ -16,7 +16,8 @@ field_default('op','param','p_prod'); % this variable should generally be define
 field_default('op','separate_individual_subs',0); 
     field_default('op','n_subs_per_row',4); 
 
-op = define_brain_regions(op,resp); 
+if any(contains(resp.Properties.VariableNames,'HCPMMP1_label_1')); op.atlas = 'hcp_distal'; end
+op = define_brain_regions(op); 
 
 
 if op.newfig 
@@ -24,7 +25,7 @@ if op.newfig
 end
 
 if op.analyze_responsive_elcs_only || ~ismember('rspv',resp.Properties.VariableNames)
-    resp = resp(resp.rspv,:); 
+    resp = resp(rows_to_analyze,:); 
 end
 
 if iscell(op.param) % if we need to select only 1 column from the table variable
@@ -74,25 +75,23 @@ function areastats = sort_and_plot_elcs(resp_to_plot,op)
     nelc = height(resp_to_plot);
     resp_to_plot.region = cell(nelc,1); 
     
-%     areastats = table([op.regiondef(:,1);'all'], [op.regiondef(:,2);{{'all'}}], nan(op.nregions,2), 'VariableNames', {'region','areas','ebar_lims'});
-    areastats = op.regiondef;
-    areastats = [areastats; table({'all'},{{''}},'VariableNames',areastats.Properties.VariableNames, 'RowNames',{'all'})]; 
-    areastats.ebar_lims = nan(height(areastats),2); 
+    nregions = size(op.regiondef,1) + 1;
+    areastats = table([op.regiondef(:,1);'all'], [op.regiondef(:,2);{{'all'}}], nan(nregions,2), 'VariableNames', {'region','subareas','ebar_lims'});
     
     natlas = length(op.atlas_var_names); 
     atlastab = table(op.atlas_var_names, cell(natlas,1), nan(natlas,1), nan(natlas,1), 'VariableNames', {'atlas', 'lblcnts', 'n_labeled_elcs', 'n_unlabeled_elcs'});
     
-    for iregion = 1:height(areastats)
+    for iregion = 1:nregions
         thisregion = areastats.region{iregion};
 
-        if strcmp(thisregion,'all')
+        if thisregion == "all"
             regionmatch = true(nelc,1); 
         else
             regionmatch = false(nelc,1); 
             for iatlas = 1:natlas
                 thisatlas = op.atlas_var_names{iatlas};
                 if ismember(thisatlas,resp_to_plot.Properties.VariableNames)
-                    regionmatch = regionmatch | any( table2array(rowfun(@(x)strcmp(x,areastats.areas{iregion}),resp_to_plot,'InputVariables',thisatlas)), 2);
+                    regionmatch = regionmatch | any( table2array(rowfun(@(x)strcmp(x,areastats.subareas{iregion}),resp_to_plot,'InputVariables',thisatlas)), 2);
                 end
             end
         end
@@ -111,12 +110,12 @@ function areastats = sort_and_plot_elcs(resp_to_plot,op)
     
     % warn about electrodes that were not assigned a region
     %%%% need to update this so that it only doesn't treat ecog/dbs electrodes as 'unlabeled' for the purposes of dbs/ecog atlases
-    all_areas = cat(2,[areastats.areas{:}]'); 
+    all_subareas = cat(2,[areastats.subareas{:}]'); 
     for iatlas = 1:natlas
         thisatlas = op.atlas_var_names{iatlas}; 
         if ismember(thisatlas,resp.Properties.VariableNames)
             [B,BG,BP] = groupcounts(resp{:,thisatlas}); atlastab.lblcnts{iatlas} = table(BG, B, BP./100, 'VariableNames', {'label','count','proportion'}); clear B BG BP
-            atlastab.lblcnts{iatlas}.has_region = cellfun(@(x)ismember(x,all_areas), atlastab.lblcnts{iatlas}.label); 
+            atlastab.lblcnts{iatlas}.has_region = cellfun(@(x)ismember(x,all_subareas), atlastab.lblcnts{iatlas}.label); 
             missing_reg = ~atlastab.lblcnts{iatlas}.has_region;
             atlastab.n_labeled_elcs(iatlas) = sum(atlastab.lblcnts{iatlas}.count(~missing_reg)); 
             atlastab.n_unlabeled_elcs(iatlas) = sum(atlastab.lblcnts{iatlas}.count(missing_reg)); 
@@ -136,7 +135,7 @@ function areastats = sort_and_plot_elcs(resp_to_plot,op)
     % number of tuned electrodes per region if they were randomly distributed across regions
     expected_sgn_per_region_random = proportion_signficant_overall * areastats.nelc_valid; 
     
-    [chi_significant, chi_p, chi_stats] = chi2gof([1:op.nregions+1]', 'Frequency',areastats.nelc_sgn, 'Expected',expected_sgn_per_region_random, 'Emin',0);
+    [chi_significant, chi_p, chi_stats] = chi2gof([1:nregions]', 'Frequency',areastats.nelc_sgn, 'Expected',expected_sgn_per_region_random, 'Emin',0);
     % chi_p
     
     
@@ -148,7 +147,7 @@ function areastats = sort_and_plot_elcs(resp_to_plot,op)
     
     ebar_neg =  max(areastats.prop_sgn - areastats.ebar_lims(:,1), 0); % proportion should not go below zero 
     ebar_pos =  -areastats.prop_sgn + areastats.ebar_lims(:,2); 
-    h_ebar = errorbar([1:op.nregions+1]', areastats.prop_sgn, ebar_neg, ebar_pos,'--');
+    h_ebar = errorbar([1:nregions]', areastats.prop_sgn, ebar_neg, ebar_pos,'--');
     h_ebar.LineWidth = 0.8;
     h_ebar.LineStyle = 'none';
     h_ebar.Color = [0 0 0];
