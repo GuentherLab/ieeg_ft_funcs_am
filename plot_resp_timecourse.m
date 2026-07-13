@@ -1,13 +1,27 @@
  %%%% plot the timecourse and SD of an electrode's response
  %%%% .... optionally sort trials by specific conditions 
  %%%% .... responses will be time-locked to a particular timepoint (e.g. speech onset) specified by trials_tmp.align_time
- % 
+%
+%  op.time_align_var must be a variable in trials table
+%  op.sort_cond can be any of:
+%       '' = plot all trials together, unsorted
+%       string = name of table variable with only one value per row
+%       {string, index} = name of table variable with muliple values per row, index of column to use.... e.g. {consonant,2}
+%
+% outputs: 
+%       1. trials = original trials table appended with resp_aligned (responses aligned to intratrial event of inerest)
+%       2. resp_grpd = table with row for each trial condition, and the responses occurring in each trial of that condition
+%       3. align_stats = struct with fields containing simple analyses of aligned timecourses, including timecourse mean, sem, sem bar lims (for plotting), timepoints on each side of sync point
+%               .... this contains align_stats.xtime added - match this with trials.resp_aligned for plotting
+%       4. op = original op struct plus defaults that were filled in
+ %
  % this script is intended by be called by project-specific wrapper scripts, e.g. plot_resp_timecourse_triplet and plot_resp_timecourse_seq
  
-function [op, resp_grpd] = plot_resp_timecourse(trials, timecourses_unaligned, trial_conds, op)
+ function [trials,resp_grpd, align_stats, op_out] = plot_resp_timecourse(trials, op)
 
 %% params
 
+field_default('op','sort_cond','')
 field_default('op','plot_raster',0); 
 field_default('op','trace_width',1);
 field_default('op','cmapname','jet');
@@ -19,121 +33,48 @@ field_default('op','yline_zero_color',  [0.8 0.8 0.8]);
 field_default('op','yline_zero_style', '-');
 field_default('op','y_timelabel_height',0.8); % how high up the plot to put the timepoint label text
 
-field_default('op','trial_time_adj_method','median_plus_sd'); % median plus stdev
+
  
-[resp_align, trials, trial_conds, xtime, op] = align_timecourses(timecourses_unaligned, trials, trial_conds, op); 
 
-function [resp_align, trials, trial_conds, xtime, op] = align_timecourses(timecourses_unaligned, trials, trial_conds, op)
+if strcmp(op.sort_cond,'') % plot all trials in a single trace
+    trials.sort_cond = ones(height(trials),1); 
+elseif ~isempty(op.sort_cond)
+    if iscell(op.sort_cond) % if we need to select only 1 column from the table variable
+        trials.sort_cond = trials{:,op.sort_cond{1}}(:,op.sort_cond{2}); 
+    else
+        trials.sort_cond = trials{:,op.sort_cond}; 
+    end
 
-    % remove trials with no response data
-    non_empty_trials = ~cellfun(@isempty, timecourses_unaligned);
-    trials = trials(non_empty_trials,:);
-        trial_conds = trial_conds(non_empty_trials,:); 
-    timecourses_unaligned = timecourses_unaligned(non_empty_trials);
-    
-    
-    %% align responses using alignment times provided within trials_tmp by the wrapper function
-    % subind = string(subs.subject)==thissub; 
-    
-    ntrials = height(trials);
-     nans_tr = nan(ntrials,1); 
-    
-     trials = [trials, table(nans_tr,              nans_tr,...
-         'VariableNames',     {'tpoints_pre_onset', 'tpoints_post_onset'})];
-     
-     % compute sampling interval... assumes a static sample rate
-     op.samp_period = 1e-5 * round(1e5 * diff(trials.times{1}(1:2))); 
-     
-     %%% find trial lengths pre- and post- the alignment time
-    for itrial = 1:ntrials
-        % n timepoints before or at align_time
-        trials.tpoints_pre_onset(itrial) = nnz(trials.times{itrial} <= trials.align_time(itrial,1)); 
-        % n timepoints after align_time
-        trials.tpoints_post_onset(itrial) = nnz(trials.times{itrial} > trials.align_time(itrial,1)); 
-    end
-     
-    % pad or cut each trial to fit a specific size, so that we can align and average trials
-    switch op.trial_time_adj_method
-        case 'median_plus_sd'
-            op.n_tpoints_pre_fixed = round(median(trials.tpoints_pre_onset) + std(trials.tpoints_pre_onset)); 
-            op.n_tpoints_post_fixed = round(median(trials.tpoints_post_onset) + std(trials.tpoints_post_onset)); 
-        case 'median'
-            op.n_tpoints_pre_fixed = median(trials.tpoints_pre_onset); 
-            op.n_tpoints_post_fixed = median(trials.tpoints_post_onset); 
-        case 'max'
-            op.n_tpoints_pre_fixed = max(trials.tpoints_pre_onset); 
-            op.n_tpoints_post_fixed = max(trials.tpoints_post_onset); 
-    end
-    tpoints_tot = op.n_tpoints_pre_fixed + op.n_tpoints_post_fixed; 
-    
-    % nan-pad or cut trial windows so that they are all the same duration
-    %%% pad and cut values must be non-negative
-    resp_align = struct; 
-    resp_align.resp = NaN(ntrials, tpoints_tot); % aligned responses for this electrode; rows = trials, columns = timepoints
-    for itrial = 1:ntrials
-       pre_pad = max([0, op.n_tpoints_pre_fixed - trials.tpoints_pre_onset(itrial)]); 
-       pre_cut = max([0, -op.n_tpoints_pre_fixed + trials.tpoints_pre_onset(itrial)]); 
-       pre_inds = 1+pre_cut:trials.tpoints_pre_onset(itrial); % inds from timecourses_unaligned... if pre_cut > 0, some timepoints from this trial will not be used
-       resp_align.resp(itrial, pre_pad+1 : op.n_tpoints_pre_fixed) = timecourses_unaligned{itrial}(pre_inds); % fill in pre-onset data... fill in electrode responses starting after the padding epoch
-    
-       post_pad = max([0, op.n_tpoints_post_fixed - trials.tpoints_post_onset(itrial)]);
-       post_cut = max([0, -op.n_tpoints_post_fixed + trials.tpoints_post_onset(itrial)]); 
-       post_inds = trials.tpoints_pre_onset(itrial) +  [1 : trials.tpoints_post_onset(itrial)-post_cut]; % inds from timecourses_unaligned
-       resp_align.resp(itrial, op.n_tpoints_pre_fixed+1:end-post_pad) = timecourses_unaligned{itrial}(post_inds); % fill in post-onset data
-       
-       trials.trial_onset_adjust(itrial) = op.samp_period * [pre_pad - pre_cut]; % number of timepoints to add to time landmarks
-    end
-    resp_align.mean = mean(resp_align.resp,'omitnan'); % mean response timecourse
-    resp_align.std = std(resp_align.resp, 'omitnan'); % stdev of response timecourses
-    resp_align.std_lims = [resp_align.mean + resp_align.std; resp_align.mean - resp_align.std]; 
-    resp_align.n_nonnan_trials = sum(~isnan(resp_align.resp)); % number of usable trials for this aligned timepoint
-    resp_align.sem = resp_align.std ./ sqrt(resp_align.n_nonnan_trials);
-    resp_align.sem_lims = [resp_align.mean + resp_align.sem; resp_align.mean - resp_align.sem]; 
-    
-    xtime = 0.5 + [linspace(-op.n_tpoints_pre_fixed, -1, op.n_tpoints_pre_fixed), linspace(0, op.n_tpoints_post_fixed-1, op.n_tpoints_post_fixed)];
-    xtime = op.samp_period * xtime; 
 
-end 
+
+end
+
+
+
+
+
+
+
+
+
+
 
 %% plotting
 if op.newfig
     hfig = figure('Color',[1 1 1]); box off
 end
 
-if ~isempty(op.sort_cond)
-    [unq_conds, ~, trial_cond_ind] = unique( trial_conds );
-    if isnumeric(unq_conds) % remove NaN condition labels
-        [unq_conds, ~, trial_cond_ind] = unq_conds(~isnan(unq_conds));
-        unq_conds = cellstr(num2str(unq_conds));
-    end
-    nconds = length(unq_conds);
 
-    celcol = cell(nconds,1);
-    resp_grpd = table(unq_conds,celcol,celcol,'VariableNames',{'condval','resp','resp_mean'}); 
+if ~strcmp(op.sort_cond,'')
 
-    for icondval = 1:nconds
-        these_trial_inds = trial_cond_ind == icondval;
-        resp_grpd.resp{icondval} = resp_align.resp(these_trial_inds,:);
-        resp_grpd.resp_mean{icondval} = mean(resp_grpd.resp{icondval},1,'omitnan');
-    end
 
-    % if grouping val indices not specified, plot them all
-    if isempty (op.condval_inds_to_plot)
-        op.condval_inds_to_plot = 1:nconds;
-    end
-    nvals_to_plot = length(op.condval_inds_to_plot); 
+     [trials, align_stats, resp_grpd, op] = sort_responses_by_condition(trials,op); 
 
     % plot error bars
+    nconds = height(resp_grpd); 
     for icond = 1:nconds
-        thiscond = unq_conds{icond};
-        resp_rows_match = strcmp(trial_conds, thiscond);
-        this_cond_resp = resp_align.resp(resp_rows_match,:); % aligned trial timecourses for trials that match this condition label
-        this_cond_mean = nanmean(this_cond_resp);
-         this_cond_std = std(this_cond_resp, 'omitnan'); % stdev of response timecourses
-        this_cond_n_nonnan_trials = sum(~isnan(this_cond_resp)); % number of usable trials for this aligned timepoint
-        this_cond_sem = this_cond_std ./ sqrt(this_cond_n_nonnan_trials);
-        this_cond_sem_lims = [this_cond_mean - this_cond_sem; this_cond_mean + this_cond_sem]; 
-        plotinds = this_cond_n_nonnan_trials > 0; % timepoints with computable error bars
+        this_cond_sem_lims = [resp_grpd.resp_mean{icond} - resp_grpd.sem{icond}; resp_grpd.resp_mean{icond} + resp_grpd.sem{icond}]; 
+        plotinds = resp_grpd.n_good_trials{icond} > 0; % timepoints with computable error bars
 
         if nnz(plotinds) > 0
             lowlims = this_cond_sem_lims(1,plotinds); 
@@ -143,18 +84,24 @@ if ~isempty(op.sort_cond)
                 uplims = smoothdata(uplims, 2, op.smooth_method, op.smooth_windowsize); 
             end
 
-            hfill = fill([xtime(plotinds), fliplr(xtime(plotinds))], [lowlims,uplims], [0.8 0.8 0.8], 'HandleVisibility','off'); % standard error
+            hfill = fill([align_stats.xtime(plotinds), fliplr(align_stats.xtime(plotinds))], [lowlims,uplims], [0.8 0.8 0.8], 'HandleVisibility','off'); % standard error
                 hfill.LineStyle = 'none'; % no border
                 hfill.EdgeColor = [0.8 0.8 0.8]; 
        end
        hold on
     end
 
+    % if grouping val indices not specified, plot them all
+    if isempty (op.condval_inds_to_plot)
+        op.condval_inds_to_plot = 1:nconds;
+    end
+    nvals_to_plot = length(op.condval_inds_to_plot); 
+
     timecourses_to_plot = cell2mat(resp_grpd.resp_mean(op.condval_inds_to_plot,:))';
     if op.smooth_timecourses
         timecourses_to_plot = smoothdata(timecourses_to_plot, 1, op.smooth_method, op.smooth_windowsize); 
     end
-    hplot = plot(xtime, timecourses_to_plot); 
+    hplot = plot(align_stats.xtime, timecourses_to_plot); 
     %         hplot.LineWidth = 1;
     hax = gca;
     for ival = 1:nvals_to_plot
@@ -166,24 +113,26 @@ if ~isempty(op.sort_cond)
 
    
 
-    legend_strs = [repmat({''},nconds,1); unq_conds]; % empty entries match error bars
+    legend_strs = [repmat({''},nconds,1); resp_grpd.condval]; % empty entries match error bars
 
-elseif isempty(op.sort_cond)
+elseif strcmp(op.sort_cond,'')
 
-    timecourses_to_plot = nanmean(resp_align.resp); 
-    lowlims = resp_align.sem_lims(1,:); % standard error
-    uplims = resp_align.sem_lims(2,:); % standard error
+     [trials, align_stats, op] = align_timecourses(trials, op);
+
+    timecourses_to_plot = nanmean(trials.resp_aligned); 
+    lowlims = align_stats.sem_lims(1,:); % standard error
+    uplims = align_stats.sem_lims(2,:); % standard error
     if op.smooth_timecourses
         timecourses_to_plot = smoothdata(timecourses_to_plot, 2, op.smooth_method, op.smooth_windowsize); 
         lowlims = smoothdata(lowlims, 2, op.smooth_method, op.smooth_windowsize); 
         uplims = smoothdata(uplims, 2, op.smooth_method, op.smooth_windowsize); 
     end
     hold off
-    hfill = fill([xtime, fliplr(xtime)], [lowlims, fliplr(uplims)], [0.8 0.8 0.8]);
+    hfill = fill([align_stats.xtime, fliplr(align_stats.xtime)], [lowlims, fliplr(uplims)], [0.8 0.8 0.8]);
                 hfill.LineStyle = 'none'; % no border
                 hfill.EdgeColor = [0.8 0.8 0.8]; 
     hold on  
-    hplot = plot(xtime, timecourses_to_plot);
+    hplot = plot(align_stats.xtime, timecourses_to_plot);
         hplot.LineWidth = 1;
 
     legend_strs = {''}; 
@@ -192,7 +141,7 @@ elseif isempty(op.sort_cond)
 end
 
 %%% set xlims before the next section, which queries the xlims of the axis; if they aren't set first, matlab sometimes gets confused while querying them
-xlimits = op.samp_period * [-op.n_tpoints_pre_fixed, op.n_tpoints_post_fixed]; 
+xlimits = op.samp_period * [-align_stats.n_tpoints_pre_fixed, align_stats.n_tpoints_post_fixed]; 
 xlim(xlimits)
 
 %%%% add y=0 line.... to remove, set op.yline_zero_width=0
@@ -250,5 +199,8 @@ if op.plot_raster
 
 
 end
+
+op_out = op; 
+trials_out = trials; 
 
 end
