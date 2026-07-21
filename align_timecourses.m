@@ -3,7 +3,8 @@
 %
 % inputs:
 %       1. trials: table which must contain:
-%           -resp_unaligned - a ntrials*1 cell array, with each containing the response of this channel on this trial
+%           -trials.resp_unaligned - a ntrials*1 cell array, with each containing the response of this channel on this trial
+%           -trials.times - must contain the syncing time in each trial
 %           -a variable with name matching op.time_align_var for syncing responses
 %       2. op: struct which must contain
 %            time_align_var, which is the name of a variable in trials table containing times that responses will be aligned to on each trial
@@ -12,7 +13,7 @@
 % outputs: 
 %       1. trials_out = original trials table appended with resp_aligned (responses aligned to intratrial event of inerest)
 %       2. align_stats = struct with fields containing simple analyses of aligned timecourses, including timecourse mean, sem, sem bar lims (for plotting), timepoints on each side of sync point
-%               .... this contains align_stats.xtime added - match this with trials.resp_aligned for plotting
+%               .... this contains align_stats.times_aligned added - match this with trials.resp_aligned for plotting
 %       3. cfg_out = original cfg struct plus defaults that were filled in
 
 
@@ -87,8 +88,8 @@ align_stats.sem_lims = [align_stats.mean + align_stats.sem; align_stats.mean - a
 
 trials.resp_aligned = resp_aligned; 
 
-align_stats.xtime = 0.5 + [linspace(-align_stats.n_tpoints_pre_fixed, -1, align_stats.n_tpoints_pre_fixed), linspace(0, align_stats.n_tpoints_post_fixed-1, align_stats.n_tpoints_post_fixed)];
-align_stats.xtime = cfg.samp_period * align_stats.xtime; 
+align_stats.times_aligned = 0.5 + [linspace(-align_stats.n_tpoints_pre_fixed, -1, align_stats.n_tpoints_pre_fixed), linspace(0, align_stats.n_tpoints_post_fixed-1, align_stats.n_tpoints_post_fixed)];
+align_stats.times_aligned = cfg.samp_period * align_stats.times_aligned; 
 
 trials_out = trials; 
 cfg_out = cfg; 

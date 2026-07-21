@@ -102,10 +102,10 @@ switch proj_str
 
         PATH_ARTIFACT_MANUAL = [PATH_ANNOT, filesep, 'sub-' op.sub '_ses-' SESSION, '_task-',TASK, '_artifact-manual.tsv']; 
         
-        %%% these paths need to be edited or remove for criteria G
-% % % %         % filepath and filename for saving artifact info into subject-specific annot folder
-% % % %         ARTIFACT_FILENAME_SUB = [PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_task-' TASK '_artifact-criteria-' op.art_crit, op.denoise_string, '.tsv'];
-% % % % % 
+        %%% these paths ma need to be edited or remove for criteria G
+        % filepath and filename for saving artifact info into subject-specific annot folder
+        ARTIFACT_FILENAME_SUB = [PATH_ANNOT filesep 'sub-' op.sub '_ses-' SESSION '_task-' TASK '_artifact-criteria-' op.art_crit, op.denoise_string, '.tsv'];
+% 
 % % % % %         PATH_ART_PROTOCOL = ['Y:\DBS\groupanalyses\task-smsl\A09_artifact_criteria_', op.art_crit]; 
 % % % % %         PATH_FIGURES = [PATH_ART_PROTOCOL filesep 'figures']; 
 % % % % %         

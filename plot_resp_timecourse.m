@@ -7,6 +7,8 @@
 %       '' = plot all trials together, unsorted
 %       string = name of table variable with only one value per row
 %       {string, index} = name of table variable with muliple values per row, index of column to use.... e.g. {consonant,2}
+%  op.do_condition_sorting must be true if condition sorting hasn't already been performed 
+%    ..... only turn this off if op.align_stats, op.resp_grpd, and (if op.sort_cond=='') trials.resp_aligned are filled in (created by sort_responses_by_condition.m)
 %
 % outputs: 
 %       1. trials = original trials table appended with resp_aligned (responses aligned to intratrial event of inerest)
@@ -22,40 +24,25 @@
 %% params
 
 field_default('op','sort_cond','')
+field_default('op','do_condition_sorting',1); 
 field_default('op','plot_raster',0); 
 field_default('op','trace_width',1);
 field_default('op','cmapname','jet');
 field_default('op','y_ax_hardlims',[]);
+field_default('op','smooth_timecourses',1);
+    field_default('op','smooth_method','gaussian');
+    field_default('op','smooth_windowsize',30); % ideally this param should be in time units based on sample rate, not samples, as it is here
+field_default('op','condval_inds_to_plot',[]); % this param determines which values of the sorting condition to use; default to all 
 field_default('op','times_to_plot',table()); 
+field_default('op','newfig',1); 
+
 
 field_default('op','yline_zero_width', 0.25); 
 field_default('op','yline_zero_color',  [0.8 0.8 0.8]); 
 field_default('op','yline_zero_style', '-');
 field_default('op','y_timelabel_height',0.8); % how high up the plot to put the timepoint label text
 
-
- 
-
-if strcmp(op.sort_cond,'') % plot all trials in a single trace
-    trials.sort_cond = ones(height(trials),1); 
-elseif ~isempty(op.sort_cond)
-    if iscell(op.sort_cond) % if we need to select only 1 column from the table variable
-        trials.sort_cond = trials{:,op.sort_cond{1}}(:,op.sort_cond{2}); 
-    else
-        trials.sort_cond = trials{:,op.sort_cond}; 
-    end
-
-
-
-end
-
-
-
-
-
-
-
-
+field_default('op','leg_pos_adjust',0.22); % move legend position to the left this much
 
 
 
@@ -64,11 +51,28 @@ if op.newfig
     hfig = figure('Color',[1 1 1]); box off
 end
 
+% if alignment/condition-grouping has already been performend, use those results
+if ~op.do_condition_sorting
+    align_stats = op.align_stats; 
+elseif op.do_condition_sorting
+    if strcmp(op.sort_cond,'') % plot all trials in a single trace
+        trials.sort_cond = ones(height(trials),1); 
+    elseif ~isempty(op.sort_cond)
+        if iscell(op.sort_cond) % if we need to select only 1 column from the table variable
+            trials.sort_cond = trials{:,op.sort_cond{1}}(:,op.sort_cond{2}); 
+        else
+            trials.sort_cond = trials{:,op.sort_cond}; 
+        end
+    end
+end
 
 if ~strcmp(op.sort_cond,'')
 
-
-     [trials, align_stats, resp_grpd, op] = sort_responses_by_condition(trials,op); 
+    if op.do_condition_sorting
+        [trials, align_stats, resp_grpd, op] = sort_responses_by_condition(trials,op); 
+    elseif ~op.do_condition_sorting
+        resp_grpd = op.resp_grpd; 
+    end
 
     % plot error bars
     nconds = height(resp_grpd); 
@@ -84,7 +88,7 @@ if ~strcmp(op.sort_cond,'')
                 uplims = smoothdata(uplims, 2, op.smooth_method, op.smooth_windowsize); 
             end
 
-            hfill = fill([align_stats.xtime(plotinds), fliplr(align_stats.xtime(plotinds))], [lowlims,uplims], [0.8 0.8 0.8], 'HandleVisibility','off'); % standard error
+            hfill = fill([align_stats.times_aligned(plotinds), fliplr(align_stats.times_aligned(plotinds))], [lowlims,uplims], [0.8 0.8 0.8], 'HandleVisibility','off'); % standard error
                 hfill.LineStyle = 'none'; % no border
                 hfill.EdgeColor = [0.8 0.8 0.8]; 
        end
@@ -101,7 +105,7 @@ if ~strcmp(op.sort_cond,'')
     if op.smooth_timecourses
         timecourses_to_plot = smoothdata(timecourses_to_plot, 1, op.smooth_method, op.smooth_windowsize); 
     end
-    hplot = plot(align_stats.xtime, timecourses_to_plot); 
+    hplot = plot(align_stats.times_aligned, timecourses_to_plot); 
     %         hplot.LineWidth = 1;
     hax = gca;
     for ival = 1:nvals_to_plot
@@ -111,10 +115,10 @@ if ~strcmp(op.sort_cond,'')
         hplot(ival).Color = cmap(colormap_ind,:);
     end
 
+    legend_strs = resp_grpd.condval; 
+    
    
-
-    legend_strs = [repmat({''},nconds,1); resp_grpd.condval]; % empty entries match error bars
-
+    %% try to get rid of this conditional - instead, use the above condition and just set trials.sort_cond to 1 
 elseif strcmp(op.sort_cond,'')
 
      [trials, align_stats, op] = align_timecourses(trials, op);
@@ -135,8 +139,6 @@ elseif strcmp(op.sort_cond,'')
     hplot = plot(align_stats.xtime, timecourses_to_plot);
         hplot.LineWidth = 1;
 
-    legend_strs = {''}; 
-
     resp_grpd = table; 
 end
 
@@ -145,7 +147,7 @@ xlimits = op.samp_period * [-align_stats.n_tpoints_pre_fixed, align_stats.n_tpoi
 xlim(xlimits)
 
 %%%% add y=0 line.... to remove, set op.yline_zero_width=0
-h_yline = yline(0.3,'LineWidth',op.yline_zero_width, 'Color',op.yline_zero_color ,'LineStyle',op.yline_zero_style);
+h_yline = yline(0,'LineWidth',op.yline_zero_width, 'Color',op.yline_zero_color ,'LineStyle',op.yline_zero_style);
 
 % plot xlines for all specified timepoints
 %%% only implemented for seq, not triplet caller scripts
@@ -178,12 +180,16 @@ end
 
 
 xlabel('Time (sec)');
-%     ylabel('HG power (normed)')
-ylabel('normed power');
+if isfield(op,'resp_signal')
+    ylabel(['normed ', op.resp_signal, ' power']);
+else
+    ylabel('normed power');
+end
 
 set(gcf,'Color',[1 1 1]);
 
-% hleg = legend(legend_strs{:},'Interpreter','none');
+hleg = legend(legend_strs{:},'Interpreter','none');
+hleg.Position(1) = hleg.Position(1)-op.leg_pos_adjust; % move to the left
 hold off
 
 

@@ -3,6 +3,7 @@
  % inputs:
 %       1. trials: table which must contain:
 %           -resp_unaligned - a ntrials*1 cell array, with each containing the response of this channel on this trial
+%           -trials.times - must contain the syncing time in each trial
 %           -a variable with name matching op.time_align_var for syncing responses
 %       2. op: struct which must contain
 %            -time_align_var = the name of a variable in trials table containing times that responses will be aligned to on each trial
@@ -12,7 +13,7 @@
 % outputs: 
 %       1. trials_out = original trials table appended with resp_aligned (responses aligned to intratrial event of inerest)
 %       2. align_stats = struct with fields containing simple analyses of aligned timecourses, including timecourse mean, sem, sem bar lims (for plotting), timepoints on each side of sync point
-%               .... this contains align_stats.xtime added - match this with trials.resp_aligned for plotting
+%               .... this contains align_stats.times_aligned added - match this with trials.resp_aligned for plotting
 %       3. resp_grpd = table with row for each value of the op.sort_cond; contains all responses within this condition, as well as mean, std, sem
 %       4. cfg_out = original cfg struct plus defaults that were filled in
 
@@ -21,10 +22,8 @@
 
      [trials, align_stats, op] = align_timecourses(trials, op); 
 
-
     assert(isfield(op,'sort_cond') && any(contains(trials.Properties.VariableNames,op.sort_cond)))
     trials.sort_cond = trials{:,op.sort_cond}; 
-
 
     [unq_conds, ~, trial_cond_ind] = unique( trials.sort_cond );
     if isnumeric(unq_conds) % remove NaN condition labels
@@ -43,11 +42,8 @@
         resp_grpd.std{icond} = std(resp_grpd.resp{icond}, 'omitnan'); % stdev of response timecourses
         resp_grpd.n_good_trials{icond} = sum(~isnan(resp_grpd.resp{icond})); % number of usable trials for this aligned timepoint
         resp_grpd.sem{icond} = resp_grpd.std{icond} ./ sqrt(resp_grpd.n_good_trials{icond});
-
     end
     
     trials_out = trials; 
     op_out = op; 
-
- 
  end

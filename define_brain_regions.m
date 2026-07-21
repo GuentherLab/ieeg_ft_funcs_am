@@ -8,6 +8,9 @@
 
 function [op_out, resp_out] = define_brain_regions(op,resp)
 
+vardefault('op',struct); 
+field_default('op','include_bottom_all_row',0); % add bottom row labeled 'all'
+
 op_out = op; 
 
 if exist('resp','var')
@@ -60,12 +63,12 @@ switch op.atlas
         % STV = 'Superior Temporal Visual Area' .... post STG
 
         region_areas = {   'SMC',  {'1','2','3a','3b','4','6v','6d','43','55b','PEF','FEF','OP4','i6-8'};... % sensorimotor cortex... included operculum bc ecog strips can't get into operc
-                        'vPMC', {'6r','FOP1'};... % ventral premotor... there are some elcs put into 'SMC' areas that are actually in vPMC... included operculum bc ecog strips can't get into operc
+%                         'vPMC', {'6r','FOP1'};... % ventral premotor... there are some elcs put into 'SMC' areas that are actually in vPMC... included operculum bc ecog strips can't get into operc
                         'STG', {'A4','A5','STGa','STV','TPOJ1' }; ... % superior temporal gyrus
                         'MFG',  {'8Av','8C','p9-46v'};... middle frontal gyrus... maybe also inf front sulcus
                         'IFG/IFS',  {'44','45','IFSp'};... % inferior frontal gyrus
                         'SMG/PF', {'PF','PFop'};... % supramarginal gyrus, operculum, ventral postcentral sulcus
-                        'AG', {'PSL'};... % angular gyrus
+%                         'AG', {'PSL'};... % angular gyrus
         
                         'MTG', {'TE1a','TE1m','TE1p'};... middle temporal gyrus / TE
                         'STN', {'STN_associative_L','STN_motor_L','STN_motor_R' };...
@@ -78,10 +81,16 @@ switch op.atlas
         op_out.atlas_var_names = {'HCPMMP1_label_1';'DISTAL_label_1'}; 
 end
 
-op_out.regiondef = table(region_areas(:,1), region_areas(:,2), 'Rownames', region_areas(:,1), 'VariableNames',...
-                            {'region',          'areas'} );
+op_out.regiondef = table(region_areas(:,1), region_areas(:,2), nan(size(region_areas,1),1), 'Rownames', region_areas(:,1), 'VariableNames',...
+                            {'region',          'areas',        'n_elcs'} );
 
 op_out.nregions = height(op_out.regiondef); 
+
+% optionally add this last for convenience, for calling functions to use when compiling analyses across regions
+if op.include_bottom_all_row
+    regiondef_varnames = op_out.regiondef.Properties.VariableNames; 
+    op_out.regiondef = [op_out.regiondef; table({'all'},{{''}},nan,'VariableNames',regiondef_varnames, 'RowNames',{'all'})]; 
+end
 
 if exist('resp','var')
     resp_out = resp; 
@@ -89,11 +98,12 @@ if exist('resp','var')
     resp_out = movevars(resp_out,'region','Before',op_out.atlas_var_names{1}); 
     for iregion = 1:op_out.nregions
         thisregion = op_out.regiondef.region{iregion};
-            for iatlas = 1:length(op_out.atlas_var_names) 
-                 atlas_var = op_out.atlas_var_names{iatlas}; 
-                 elcs_in_this_region = ismember(resp_out{:,atlas_var},op_out.regiondef.areas{iregion}); 
-                 resp_out.region(elcs_in_this_region) = {thisregion};
-            end
+        for iatlas = 1:length(op_out.atlas_var_names) 
+             atlas_var = op_out.atlas_var_names{iatlas}; 
+             elcs_in_this_region = ismember(resp_out{:,atlas_var},op_out.regiondef.areas{iregion}); 
+             resp_out.region(elcs_in_this_region) = {thisregion};
+        end
+        op_out.regiondef.n_elcs(iregion) = nnz(strcmp(resp_out.region,thisregion)); 
     end
 end
 

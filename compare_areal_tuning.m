@@ -1,7 +1,7 @@
  %%%% check whether there is a nonrandom distribution of significantly tuned electrodes across areas
  % op.param can either be just the name of the param, or it can be {name, idx}, where idx is the column within the name table variable of the resp table
 
-function subs = compare_areal_tuning(resp,op)
+function [subs, areastats_all_subs] = compare_areal_tuning(resp,op)
 
 % close all
 
@@ -16,8 +16,9 @@ field_default('op','param','p_prod'); % this variable should generally be define
 field_default('op','separate_individual_subs',0); 
     field_default('op','n_subs_per_row',4); 
 
-op = define_brain_regions(op,resp); 
-
+cfg = op; 
+cfg.include_bottom_all_row = 1; 
+op = define_brain_regions(cfg,resp); 
 
 if op.newfig 
     hfig = figure('color','w','WindowState', 'maximized');
@@ -52,7 +53,7 @@ if op.separate_individual_subs
     % plot the grand avg plot across subs
     subplot(nrows,ncols,nsubs+1)
     op.subtitle = 'all_subs'; 
-    sort_and_plot_elcs(resp,op);
+    areastats_all_subs = sort_and_plot_elcs(resp,op);
     
     
 elseif ~op.separate_individual_subs
@@ -74,9 +75,7 @@ function areastats = sort_and_plot_elcs(resp_to_plot,op)
     nelc = height(resp_to_plot);
     resp_to_plot.region = cell(nelc,1); 
     
-%     areastats = table([op.regiondef(:,1);'all'], [op.regiondef(:,2);{{'all'}}], nan(op.nregions,2), 'VariableNames', {'region','areas','ebar_lims'});
     areastats = op.regiondef;
-    areastats = [areastats; table({'all'},{{''}},'VariableNames',areastats.Properties.VariableNames, 'RowNames',{'all'})]; 
     areastats.ebar_lims = nan(height(areastats),2); 
     
     natlas = length(op.atlas_var_names); 
