@@ -74,5 +74,11 @@ for n=2:size(og_sig,2)
     og_sig(:,n) = k*og_sig(:,n-1) + k*diff_sig(:,n-1); % HPF
 end
 
+% sometimes og_sig ends up having an extra sample (e.g. SMSL subject DM1049)
+%%% in this case, delete the last sample
+if size(og_sig,2) == size(diff_sig,2) + 1;
+    og_sig = og_sig(:,1:end-1); 
+end
+
 D_out.trial = {og_sig};
 cfg_out = cfg; 
