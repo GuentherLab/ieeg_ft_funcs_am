@@ -1,7 +1,17 @@
 % input a table with variables mni_x, mni_y, mni_z
 %%%% this funtion plots those points on cortical surface
 
-function brainplot_mni(coord_table)
+function brainplot_mni(coord_table,op)
+
+vardefault('op',struct); 
+field_default('op','marker_size',50);
+field_default('op','surf_alpha',0.7); 
+field_default('op','snap_to_surf',1);  % if true, project eletrodes to nearest point on ctx surface
+
+% if snapping to surfac, shift electrodes so that they aren't covered by the brain surface
+%%% gets applied after snapping to surface
+%%% .... if snapping, offset of -1 should be enough to have points entirely above ctx surface (in L hem)
+field_default('op','x_offset',-5); 
 
 %% Loading paths
 % ft_defaults
@@ -14,7 +24,7 @@ function brainplot_mni(coord_table)
 % set(0,'DefaultFigureWindowStyle','docked')
 set(0,'DefaultFigureWindowStyle','normal')
 
-markersize = 50; 
+
 
 % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %% get counts of each unique label
 % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % if ismember('hcpmmp1_label_1',resp.Properties.VariableNames)
@@ -70,35 +80,29 @@ color_ep_cm = '#9EB859';% #EP CM
 
 plotcolor = 'r';
 
-snap_to_surf = 0; % if true, project eletrodes to nearest point on ctx surface
 
-surf_alpha = 0.5; 
-
-% shift electrodes so that they aren't covered by the brain surface
-%%% gets applied after snapping to surface
-%%% .... if snapping, offset of -1 should be enough to have points entirely above ctx surface (in L hem)
-x_offset = -1;
 
 
 xyz = [coord_table.mni_x, coord_table.mni_y, coord_table.mni_z]; 
 
 % close all
-hfig = figure;
+hfig = figure('WindowState', 'maximized', 'Color','w');
+rotate3d on
 hpatch = patch('vertices', average_mni.Vertices, 'faces', average_mni.Faces,...
-    'FaceColor', [.9 .9 .9], 'EdgeColor', 'none', 'FaceAlpha',surf_alpha, ...
+    'FaceColor', [.9 .9 .9], 'EdgeColor', 'none', 'FaceAlpha',op.surf_alpha, ...
     'facelighting', 'gouraud', 'specularstrength', 0, 'ambientstrength', 0.5, 'diffusestrength', 0.5); 
 hold on
 
-if snap_to_surf
+if op.snap_to_surf
     [~, surfpoint_idx] = min(pdist2(xyz,average_mni.Vertices), [], 2); % find nearest surf points
     xyz_to_plot = average_mni.Vertices(surfpoint_idx,:); 
-elseif ~snap_to_surf
+elseif ~op.snap_to_surf
     xyz_to_plot = xyz;
 end
 
-hscat = scatter3(xyz_to_plot(:,1) + x_offset, xyz_to_plot(:,2), xyz_to_plot(:,3), 'filled',...
+hscat = scatter3(xyz_to_plot(:,1) + op.x_offset, xyz_to_plot(:,2), xyz_to_plot(:,3), 'filled',...
   'MarkerFaceAlpha',1,'MarkerFaceColor',plotcolor,'MarkerEdgeColor','k','LineWidth',0.01);
-hscat.SizeData = 100;
+hscat.SizeData = op.marker_size;
 view(-90,0)
 axis off; axis equal
 camlight('headlight','infinite');
