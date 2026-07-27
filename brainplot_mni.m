@@ -11,7 +11,7 @@ field_default('op','snap_to_surf',1);  % if true, project eletrodes to nearest p
 % if snapping to surfac, shift electrodes so that they aren't covered by the brain surface
 %%% gets applied after snapping to surface
 %%% .... if snapping, offset of -1 should be enough to have points entirely above ctx surface (in L hem)
-field_default('op','x_offset',-5); 
+field_default('op','x_offset',-1); 
 
 %% Loading paths
 % ft_defaults
@@ -90,7 +90,6 @@ xyz = [coord_table.mni_x, coord_table.mni_y, coord_table.mni_z];
 
 % close all
 hfig = figure('WindowState', 'maximized', 'Color','w');
-rotate3d on
 hpatch = patch('vertices', average_mni.Vertices, 'faces', average_mni.Faces,...
     'FaceColor', [.9 .9 .9], 'EdgeColor', 'none', 'FaceAlpha',op.surf_alpha, ...
     'facelighting', 'gouraud', 'specularstrength', 0, 'ambientstrength', 0.5, 'diffusestrength', 0.5); 
@@ -117,3 +116,4 @@ hold off
 
 % print(gcf,[PATH_ANALYSIS 'qqq.png'],'-dpng','-r300')
 
+rotate3d on
