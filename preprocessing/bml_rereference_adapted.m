@@ -381,7 +381,61 @@ else
 %         label_new = strcat(reftable.label, '-',reftable.reference);
 %         ref.label(ismember(ref.label, reftable.label)) = label_new;
 %     end
-    
+  
+  elseif ismember(method,{'bipolar_2'})
+      % bipolar rereferencing using L1 and L4 as references
+      %loading label again from cfg
+      label = bml_getopt(cfg,'label',raw.label);
+      ref = raw;
+      label_ecog = contains(raw.label, 'ecog');
+      label_dbs = contains(raw.label, 'dbs');
+
+      for t=1:numel(raw.trial)
+          % first half
+        ridx=find(ismember(raw.label,'dbs_L1'));
+        midx = find(contains(raw.label, 'dbs_L2')); % L2A, L2B, L2C
+
+        ref.trial{t}(midx,:) = ...
+            raw.trial{t}(midx,:) - ...
+            raw.trial{t}(ridx,:);
+
+        % second half
+        ridx=find(ismember(raw.label,'dbs_L4'));
+        midx = find(contains(raw.label, 'dbs_L3')); % L3A, L3B, L3C
+
+        ref.trial{t}(midx,:) = ...
+            raw.trial{t}(midx,:) - ...
+            raw.trial{t}(ridx,:);        
+      end
+
+  elseif ismember(method,{'bipolar_3'})
+      % bipolar rereferencing using nearest neighbor as reference, L1/L4 not rereferenced
+      label = bml_getopt(cfg,'label',raw.label);
+      ref = raw;
+      label_ecog = contains(raw.label, 'ecog');
+      label_dbs = contains(raw.label, 'dbs');
+
+      for t=1:numel(raw.trial)
+        aidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+A', 'match'));
+        bidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+B', 'match'));
+        cidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+B', 'match'));
+        
+        % first set
+        ref.trial{t}(aidx,:) = ...
+            raw.trial{t}(aidx,:) - ...
+            raw.trial{t}(bidx,:);
+
+        % second set
+        ref.trial{t}(bidx,:) = ...
+            raw.trial{t}(bidx,:) - ...
+            raw.trial{t}(cidx,:);
+
+        % third set (redundant)
+        ref.trial{t}(cidx,:) = ...
+            raw.trial{t}(cidx,:) - ...
+            raw.trial{t}(aidx,:);        
+      end
+
   elseif ismember(method,{'LAR','local'})
     error('local average referencing not implemented for data with NaNs')
   elseif ismember(method,{'VAR','variable'})
