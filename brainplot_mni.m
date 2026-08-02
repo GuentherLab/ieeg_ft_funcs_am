@@ -8,6 +8,11 @@ field_default('op','marker_size',50);
 field_default('op','surf_alpha',0.7); 
 field_default('op','snap_to_surf',1);  % if true, project eletrodes to nearest point on ctx surface
 
+
+path_ieeg_ft_funcs_am = fileparts(which('brainplot_mni'));
+path_atlases = [path_ieeg_ft_funcs_am, filesep, 'atlases']; 
+path_average_mni = [path_atlases, filesep, 'MNI_ICBM_2009b_NLIN_ASYM', filesep, 'cortex', filesep, 'CortexLowRes_15000V.mat']; % copy in ieeg_funcs repo
+
 % if snapping to surfac, shift electrodes so that they aren't covered by the brain surface
 %%% gets applied after snapping to surface
 %%% .... if snapping, offset of -1 should be enough to have points entirely above ctx surface (in L hem)
@@ -24,26 +29,8 @@ field_default('op','x_offset',-1);
 % set(0,'DefaultFigureWindowStyle','docked')
 set(0,'DefaultFigureWindowStyle','normal')
 
-
-
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %% get counts of each unique label
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % if ismember('hcpmmp1_label_1',resp.Properties.VariableNames)
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %     [B,BG,BP] = groupcounts(resp.HCPMMP1_label_1); counts_hcpmmp1_label_1 = table(B, BG, BP./100, 'VariableNames', {'label','count','proportion'}); clear B BG BP
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % end
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % if ismember('fs_anatomy',resp.Properties.VariableNames)
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %     [B,BG,BP] = groupcounts(resp.fs_anatomy); counts_fs_anatomy = table(B, BG, BP./100, 'VariableNames', {'label','count','proportion'}); clear B BG BP
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % end
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % if ismember('MOREL_label_1',resp.Properties.VariableNames)
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %     [B,BG,BP] = groupcounts(resp.MOREL_label_1); counts_MOREL_label_1 = table(B, BG, BP./100, 'VariableNames', {'label','count','proportion'}); clear B BG BP
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % end
-% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % [B,BG,BP] = groupcounts(resp.DISTAL_label_1); counts_DISTAL_label_1 = table(B, BG, BP./100, 'VariableNames', {'label','count','proportion'}); clear B BG BP
-
 %% Configuration Variables and Paths
-% PATH_ANALYSIS = '/Users/ao622/Dropbox (Personal)/Lab-BML/Expan/2021-11-16-FOOOF-figures';
-% % % % % % % % % PATH_DATA='/Users/ao622/Dropbox (Personal)/Lab-BML/Expan/2021-11-16-FOOOF-figures/data';
-% % % PATH_AVERAGE_MNI = 'Z:\DBS\DBS_subject_lists/MNI_ICBM_2009b_NLIN_ASYM/cortex/CortexLowRes_15000V.mat';
 
-PATH_AVERAGE_MNI = 'C:\docs\code\ieeg_ft_funcs_am\atlases\MNI_ICBM_2009b_NLIN_ASYM/cortex/CortexLowRes_15000V.mat'; % copy in ieeg_funcs repo
 
 PATH_SUBCORT_ATLAS = '/Volumes/Nexus/Resources/STN-Atlas/atlas_index.mat';
 PATH_SUBCORT_ATLAS_VIM = '/Users/ao622/git/leaddbs/templates/space/MNI_ICBM_2009b_NLIN_ASYM/atlases/DISTAL (Ewert 2017)/atlas_index.mat';
@@ -53,7 +40,7 @@ PATH_SUBCORT_ATLAS_VIM = '/Users/ao622/git/leaddbs/templates/space/MNI_ICBM_2009
 % electrode = readtable('data/A01_DBS_aper_coord_dx.tsv','Delimiter', '\t', 'TreatAsEmpty', 'NA','FileType','text');
 
 %loading cortical reconstructions
-average_mni = load(PATH_AVERAGE_MNI);
+average_mni = load(path_average_mni);
 
 % subcort = load(PATH_SUBCORT_ATLAS);
 % subcort_vim = load(PATH_SUBCORT_ATLAS_VIM);
