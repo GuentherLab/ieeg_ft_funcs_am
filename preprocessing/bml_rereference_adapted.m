@@ -408,32 +408,54 @@ else
             raw.trial{t}(ridx,:);        
       end
 
-  elseif ismember(method,{'bipolar_3'})
-      % bipolar rereferencing using nearest neighbor as reference, L1/L4 not rereferenced
+  elseif ismember(method,{'8chan_dbs_bipolar'})
+      % bipolar rereferencing using nearest neighbor as reference
+      % L1 and L4 rereferenced using average of rings
       label = bml_getopt(cfg,'label',raw.label);
       ref = raw;
       label_ecog = contains(raw.label, 'ecog');
       label_dbs = contains(raw.label, 'dbs');
 
       for t=1:numel(raw.trial)
+        fidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L1', 'match'));
+        lidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L4', 'match')); 
         aidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+A', 'match'));
         bidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+B', 'match'));
-        cidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+B', 'match'));
+        cidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+C', 'match'));
         
+        % first tip
+        ref.trial{t}(fidx,:) = ...
+            raw.trial{t}(fidx,:) - ...
+            mean(raw.trial{t}(find(contains(raw.label, 'dbs_L2')),:),1,'omitnan');
+        ref.label{fidx} = 'dbs_L1-L2';
+
+        % last tip
+        ref.trial{t}(lidx,:) = ...
+            raw.trial{t}(lidx,:) - ...
+            mean(raw.trial{t}(find(contains(raw.label, 'dbs_L3')),:),1,'omitnan');
+        ref.label{lidx} = 'dbs_L4-L3';
+
         % first set
         ref.trial{t}(aidx,:) = ...
             raw.trial{t}(aidx,:) - ...
             raw.trial{t}(bidx,:);
+        ref.label{find(aidx,1,'first')} = 'dbs_L2A-B';
+        ref.label{find(aidx,1,'last')} = 'dbs_L3A-B';
 
         % second set
         ref.trial{t}(bidx,:) = ...
             raw.trial{t}(bidx,:) - ...
             raw.trial{t}(cidx,:);
+        ref.label{find(bidx,1,'first')} = 'dbs_L2B-C';
+        ref.label{find(bidx,1,'last')} = 'dbs_L3B-C';
 
         % third set (redundant)
         ref.trial{t}(cidx,:) = ...
             raw.trial{t}(cidx,:) - ...
-            raw.trial{t}(aidx,:);        
+            raw.trial{t}(aidx,:); 
+        ref.label{find(cidx,1,'first')} = 'dbs_L2C-A';
+        ref.label{find(cidx,1,'last')} = 'dbs_L3C-A';
+        
       end
 
   elseif ismember(method,{'LAR','local'})
