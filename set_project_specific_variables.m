@@ -1,7 +1,9 @@
 % this script should be called by functions within ieeg_ft_funcs_am....
-% ... it will determine which data collection site (Pitt vs. MGH) the subject is from
+% ... it will determine which data collection site (Pitt Triplet vs. MGH SMSL) the subject is from
 % ... and then set paths and other variables appropriate to that site
 %%%% implemented as script rather than function so that these vars will be put directly into workspace 
+
+%% PROBABLY WILL BE DEPRECATED FOR PROJECTS AFTER SMSL 2025.... use setpaths functions stored in project-specific repos instead
 
 %% a lot of the paths that get set below can be replaced by calling setpaths_dbs_triplet or setpaths_dbs_seq
 

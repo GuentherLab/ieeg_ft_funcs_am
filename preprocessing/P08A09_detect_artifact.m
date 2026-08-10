@@ -225,6 +225,9 @@ for idx = 1:height(artparam)
   %% checking coverage per connector group
   %if several channels of the same connector group have an artifact, reject
   %the entire connector group
+  %     AM note: only do this for ECoG as it's the only channel type w/ enough chans that we can reject whole connector
+
+ if strcmp(artparam.electrode_type{idx}, 'ecog')
 
   %adding connector information to artifact annotation table
   electrodes.conn_label = strcat({'conn'},num2str(electrodes.connector));
@@ -271,6 +274,11 @@ for idx = 1:height(artparam)
   else
     artifact_5 = artifact_2;
   end
+elseif ~strcmp(artparam.electrode_type{idx}, 'ecog')
+    artifact_5 = artifact_2;
+    artifact_5.conn_label = repmat({''},height(artifact_5),1);
+end
+
 
   %final raster plot for artifacts
   cfg=[];
