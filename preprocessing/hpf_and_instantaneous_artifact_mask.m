@@ -30,6 +30,7 @@ qart_diff = prctile(diff_sig_smoothed, [25; 75], 2);
 % RECONSTRUCTED SIGNAL
 diff_sig_mask = diff_sig_smoothed > qart_diff(:,2)+cfg.iqr_thr*iqr_diff | diff_sig_smoothed < qart_diff(:,1)-cfg.iqr_thr*iqr_diff; % crops derivatives beyond minimum/maximum values
 diff_sig(diff_sig_mask) = 0;
+og_sig = cumsum([zeros(size(diff_sig,1),1), diff_sig],2);   % reconstructs original signal by cumulative sum (temporal integral)
 
 
 
@@ -51,22 +52,12 @@ if cfg.add_mask
     
     % for each electrode, set value to zero from starts:end
     for i_t = 1:size(added_mask_table,1)
-        diff_sig(strcmp(D_out.label, added_mask_table.label(i_t)), added_mask_table.starts_idx(i_t):added_mask_table.ends_idx(i_t)) = 0;
+        og_sig(strcmp(D_out.label, added_mask_table.label(i_t)), added_mask_table.starts_idx(i_t):added_mask_table.ends_idx(i_t)) = 0;
     end
 
 end
 %% end of added section
 %% 
-
-
-
-
-
-
-
-
-
-og_sig = cumsum([zeros(size(diff_sig,1),1), diff_sig],2);   % reconstructs original signal by cumulative sum (temporal integral)
 
 % HPF
 k = 1/(1 + 2*pi*cfg.f_c/D_out.fsample); % first order IIR
@@ -76,9 +67,9 @@ end
 
 % sometimes og_sig ends up having an extra sample (e.g. SMSL subject DM1049)
 %%% in this case, delete the last sample
-if size(og_sig,2) == size(diff_sig,2) + 1;
-    og_sig = og_sig(:,1:end-1); 
-end
+% if size(og_sig,2) == size(diff_sig,2) + 1;
+%     og_sig = og_sig(:,1:end-1); 
+% end
 
 D_out.trial = {og_sig};
 cfg_out = cfg; 
