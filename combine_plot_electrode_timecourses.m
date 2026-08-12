@@ -1,7 +1,7 @@
  %%%% average timecourses of electrodes and plot
 
 
-function combine_plot_electrode_timecourses(resp,subs,op)
+ function [cond_elc_rgn, align_stats_rgn, resp_grpd_rgn, cfg_rgn] = combine_plot_electrode_timecourses(resp,subs,op)
 
 vardefault('op',struct);
 field_default('op','newfig', true); 
@@ -67,30 +67,42 @@ if op.newfig
     hfig = figure('color','w','WindowState', 'maximized');
 end
 
+if op.analyze_tuned_elcs_only
+    figtitle = {['electrodes meeting (', op.tuning_param, ' < ', num2str(op.tuning_alpha),')'],''};
+else
+    figtitle = {'no eletrode tuning criteria',''};
+end
+
+sgtitle(figtitle);
+
 % % get number of rows and columns
 r = 1:op.nregions;  c = ceil(op.nregions./r);
 [~, idx] = min(abs(c./r - 1/op.row_col_ratio)); 
 op.n_plot_rows = r(idx); op.n_plot_cols = c(idx);
 
 %%%% do plotting
+cond_elc_rgn = cell(op.nregions,1);
+align_stats_rgn = cell(op.nregions,1);
+resp_grpd_rgn  = cell(op.nregions,1);
+cfg_rgn   = cell(op.nregions,1);
 for iregion = 1:op.nregions
     thisregion = region_resp.region{iregion}; 
     hsubplot(iregion) = subplot(op.n_plot_rows,op.n_plot_cols,iregion);
 
     if region_resp.n_elcs(iregion) > 1 % skip the region if there's less than 2 electrodes to plot
-        cond_elc_rgn = cond_elc_resp_align(strcmp(cond_elc_resp_align.region,thisregion), :); % make table with only elcs in this region
+        cond_elc_rgn{iregion} = cond_elc_resp_align(strcmp(cond_elc_resp_align.region,thisregion), :); % make table with only elcs in this region
     
         cfg = [];
         cfg.sort_cond = op.sort_cond; 
         cfg.time_align_var = op.time_align_var;
-        [cond_elc_rgn, align_stats_rgn, resp_grpd_rgn, cfg_rgn] = sort_responses_by_condition(cond_elc_rgn,cfg);
+        [cond_elc_rgn{iregion}, align_stats_rgn{iregion}, resp_grpd_rgn{iregion}, cfg_rgn{iregion}] = sort_responses_by_condition(cond_elc_rgn{iregion},cfg);
     
         cfg = [];
         cfg = op;
-        cfg.samp_period = cfg_rgn.samp_period; 
+        cfg.samp_period = cfg_rgn{iregion}.samp_period; 
         cfg.do_condition_sorting = 0; % skip sorting, it's already done here
-        cfg.align_stats = align_stats_rgn; 
-        cfg.resp_grpd = resp_grpd_rgn; 
+        cfg.align_stats = align_stats_rgn{iregion}; 
+        cfg.resp_grpd = resp_grpd_rgn{iregion}; 
         cfg.newfig = 0; 
         plot_resp_timecourse([],cfg); 
     end
