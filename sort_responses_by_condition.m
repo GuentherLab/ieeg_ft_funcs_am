@@ -1,39 +1,56 @@
  %%%% align response timecourses by a sync event, then group together timecourses according to a trial condition
 
  % inputs:
-%       1. trials: table which must contain:
-%           -resp_unaligned - a ntrials*1 cell array, with each containing the response of this channel on this trial
-%           -trials.times - must contain the syncing time in each trial
-%           -a variable with name matching op.time_align_var for syncing responses
-%       2. op: struct which must contain
-%            -time_align_var = the name of a variable in trials table containing times that responses will be aligned to on each trial
+%       1. trials: table which contain:
+%           -EITHER resp_unaligned - a ntrials*1 cell array, with each containing the response of this channel on this trial
+%              ....... OR resp_aligned - a ntrials*n_timepoints array... this is the trials.resp_aligned output from align_timecourses
+%           -trials.times - must contain the syncing time in each trial.... only required if resp_aligned not provided
+%           -a variable with name matching op.time_align_var for syncing responses.... only required if resp_aligned not provided
+%       2. op: struct which contains
 %            -sort_cond = the name of a variable in trials table, according to which we will group response timecourses
+%            -time_align_var = the name of a variable in trials table containing times that responses will be aligned to on each trial.... only required if resp_aligned not provided
+%            -sort_cond_vals = list of all values of value of sort_cond to include, in the order you want
 %
+
+
 %       
 % outputs: 
 %       1. trials_out = original trials table appended with resp_aligned (responses aligned to intratrial event of inerest)
 %       2. align_stats = struct with fields containing simple analyses of aligned timecourses, including timecourse mean, sem, sem bar lims (for plotting), timepoints on each side of sync point
 %               .... this contains align_stats.times_aligned added - match this with trials.resp_aligned for plotting
+%               .... this will be empty if trials.resp_aligned was provided, as align_timecourses.m will be skipped
 %       3. resp_grpd = table with row for each value of the op.sort_cond; contains all responses within this condition, as well as mean, std, sem
 %       4. cfg_out = original cfg struct plus defaults that were filled in
 
 
  function [trials_out, align_stats, resp_grpd, op_out] = sort_responses_by_condition(trials,op)
+      field_default('op','sort_cond_vals',{}); 
 
-     [trials, align_stats, op] = align_timecourses(trials, op); 
+     if  ~ismember('resp_aligned', trials.Properties.VariableNames)
+         [trials, align_stats, op] = align_timecourses(trials, op);
+     else
+        align_stats = [];
+     end
 
+     % process sorting condition info
     assert(isfield(op,'sort_cond') && any(contains(trials.Properties.VariableNames,op.sort_cond)))
     trials.sort_cond = trials{:,op.sort_cond}; 
 
-    [unq_conds, ~, trial_cond_ind] = unique( trials.sort_cond );
-    if isnumeric(unq_conds) % remove NaN condition labels
-        [unq_conds, ~, trial_cond_ind] = unq_conds(~isnan(unq_conds));
-        unq_conds = cellstr(num2str(unq_conds));
+    if isempty(op.sort_cond_vals) % if not specified, use all sort condition values
+        op.sort_cond_vals = unique( trials.sort_cond );
     end
-    nconds = length(unq_conds);
 
+
+    if isnumeric(op.sort_cond_vals) 
+        op.sort_cond_vals = op.sort_cond_vals(~isnan(op.sort_cond_vals)); % remove NaN condition labels
+        op.sort_cond_vals = cellstr(string(op.sort_cond_vals)); % turn from numeric to string
+    end
+    [~,trial_cond_ind] = ismember(string(trials.sort_cond),op.sort_cond_vals); 
+    nconds = length(op.sort_cond_vals);
+
+    % make table of sorting conditions
     celcol = cell(nconds,1);
-    resp_grpd = table(unq_conds,celcol,celcol,'VariableNames',{'condval','resp','resp_mean'}); 
+    resp_grpd = table(reshape(op.sort_cond_vals, [], 1), celcol, celcol, 'VariableNames',{'condval','resp','resp_mean'}); 
 
     for icond = 1:nconds
         these_trial_inds = trial_cond_ind == icond;

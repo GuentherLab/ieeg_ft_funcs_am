@@ -457,7 +457,52 @@ else
         ref.label{find(cidx,1,'last')} = 'dbs_L3C-A';
         
       end
+  elseif ismember(method,{'8chan_dbs_laplacian'})
+      label = bml_getopt(cfg,'label',raw.label);
+      ref = raw;
+      label_ecog = contains(raw.label, 'ecog');
+      label_dbs = contains(raw.label, 'dbs');
 
+      fidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L1', 'match'));
+      lidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L4', 'match')); 
+      aidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+A', 'match'));
+      bidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+B', 'match'));
+      cidx = ~cellfun(@isempty, regexp(raw.label, 'dbs_L[2 3]+C', 'match'));
+
+      for t=1:numel(raw.trial)
+          % A elecs
+          ref.trial{t}(aidx,:) = ...
+            raw.trial{t}(aidx,:) - ...
+            0.5*(raw.trial{t}(bidx,:) + raw.trial{t}(cidx,:));
+          ref.label{find(aidx,1,'first')} = 'dbs_L2A-BC';
+          ref.label{find(aidx,1,'last')} = 'dbs_L3A-BC';
+
+          % B elecs
+          ref.trial{t}(bidx,:) = ...
+            raw.trial{t}(bidx,:) - ...
+            0.5*(raw.trial{t}(aidx,:) + raw.trial{t}(cidx,:));
+          ref.label{find(bidx,1,'first')} = 'dbs_L2B-AC';
+          ref.label{find(bidx,1,'last')} = 'dbs_L3B-AC';
+
+          % C elecs
+          ref.trial{t}(cidx,:) = ...
+            raw.trial{t}(cidx,:) - ...
+            0.5*(raw.trial{t}(aidx,:) + raw.trial{t}(bidx,:));
+          ref.label{find(cidx,1,'first')} = 'dbs_L2C-AB';
+          ref.label{find(cidx,1,'last')} = 'dbs_L3C-AB';
+
+          % First Tip
+          ref.trial{t}(fidx,:) = ...
+            raw.trial{t}(fidx,:) - ...
+            1/3*(raw.trial{t}(find(aidx,1,'first'),:) + raw.trial{t}(find(bidx,1,'first'),:) + raw.trial{t}(find(cidx,1,'first'),:));
+          ref.label{find(fidx,1,'first')} = 'dbs_L1-ABC';
+
+          % Second Tip
+          ref.trial{t}(lidx,:) = ...
+            raw.trial{t}(lidx,:) - ...
+            1/3*(raw.trial{t}(find(aidx,1,'last'),:) + raw.trial{t}(find(bidx,1,'last'),:) + raw.trial{t}(find(cidx,1,'last'),:));
+          ref.label{find(lidx,1,'first')} = 'dbs_L4-ABC';
+      end  
   elseif ismember(method,{'LAR','local'})
     error('local average referencing not implemented for data with NaNs')
   elseif ismember(method,{'VAR','variable'})
