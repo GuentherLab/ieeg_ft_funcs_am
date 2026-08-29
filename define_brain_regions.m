@@ -6,7 +6,7 @@
 % if optional 'resp' table of electrodes is provided, then region labels will be added in table variable 'region'
 %%% this resp table will also be used to figure out which atlas we are using
 
-function [op_out, resp_out] = define_brain_regions(op,resp)
+function [resp_out, op_out] = define_brain_regions(resp,op)
 
 vardefault('op',struct); 
 field_default('op','include_bottom_all_row',0); % add bottom row labeled 'all'

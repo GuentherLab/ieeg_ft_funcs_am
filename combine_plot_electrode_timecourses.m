@@ -48,7 +48,7 @@ if op.analyze_tuned_elcs_only
     resp = resp(tuned_elcs,:); 
 end
 
-[op,resp] = define_brain_regions(op,resp); 
+[resp,op] = define_brain_regions(resp,op); 
 
 % make a copy of electrodes table for aligning and averaging responses
 n_elc = height(resp);

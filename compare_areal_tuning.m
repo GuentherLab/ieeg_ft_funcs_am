@@ -18,7 +18,7 @@ field_default('op','separate_individual_subs',0);
 
 cfg = op; 
 cfg.include_bottom_all_row = 1; 
-op = define_brain_regions(cfg,resp); 
+[~,op] = define_brain_regions(resp,cfg); 
 
 if op.newfig 
     hfig = figure('color','w','WindowState', 'maximized');
