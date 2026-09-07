@@ -1,153 +1,373 @@
- %%%% average timecourses of electrodes and plot
-
- %%%%%%%% inputs %%%%%%%%
- % 1. resp - table of electrode responses containing:
- %      EITHER timecourse OR timecourses_aligned
- %      sub
- %      chan
- %      rspv [required if analyze_responsive_elcs_only==1]
- %      [tuning param - required if analyze_tuned_elcs_only==1]
- %      [anatomical area label.... probably HCPMMP1_label_1 or DISTAL_label_1      
- %
- % 2. op [optional]
- %
- %
- %
- %       Recommended: the resp table may montain the variable 'timecourses_aligned', in which alignment will have already been done.
-%       This table must have a rowname matching op.time_align_var ....
-%            ..... and variable names 'trials' and 'align_stats', which were the outputs of align_timecourses.m
-%        If this table is present, then align_timecourses will be skipped here (potentially saves a lot of time)
-
-
- function [cond_elc_rgn, align_stats_rgn, resp_grpd_rgn, cfg_rgn] = combine_plot_electrode_timecourses(resp,subs,op)
-
-vardefault('op',struct);
-field_default('op','newfig', true); 
-field_default('op','analyze_responsive_elcs_only',1);
-field_default('op','analyze_tuned_elcs_only',1);
-field_default('op','row_col_ratio',4/3); % approx ratio of rows to columns
-field_default('op','xline_events',{}); 
-field_default('op','sort_cond_vals',{}); 
-
-% if analyze_tuned_elcs_only==true, you must define a parameter op.tuning_param to serve as inclusion criteria
-% if cfg.analyze_tuned_elcs_only==true, then only include elcs where op.tuning_param<op.tuning_alpha
-field_default('op','analyze_tuned_elcs_only',1);
-    field_default('op','tuning_alpha',0.05); 
+function [cond_elc_rgn, align_stats_rgn, resp_grpd_rgn, cfg_rgn] = ...
+    combine_plot_electrode_timecourses(resp, subs, op)
+    
+    %% COMBINE_PLOT_ELECTRODE_TIMECOURSES
+    % Main function for visualizing pre-warped electrode timecourses
+    % Assumes data is already warped: resp.timecourse contains ntrial x ntimepoint responses
+    
+    %% Set defaults
+    vardefault('op', struct)
+    field_default('op', 'newfig', true)
+    field_default('op', 'analyze_responsive_elcs_only', 1)
+    field_default('op', 'analyze_tuned_elcs_only', 1)
+    field_default('op', 'tuning_alpha', 0.05)
+    field_default('op', 'row_col_ratio', 4/3)
+    field_default('op', 'sort_cond', '')
+    field_default('op', 'sort_cond_vals', {})
+    field_default('op', 'smooth_windowsize', 30)
+    field_default('op', 'smooth_method', 'gaussian')
+    field_default('op', 'trace_width', 1.5)
+    field_default('op', 'epochs', [])
+    field_default('op', 'epochs_to_label', [])
+    field_default('op', 'epoch_colors', [])
+    field_default('op', 'epoch_alpha', 0.12)
+    field_default('op', 'epoch_label_height', 0.92)
+    field_default('op', 'epoch_label_fontsize', 8)
+    field_default('op', 'cmapname', 'jet')
+    field_default('op', 'leg_pos_adjust', 0.22)
+    field_default('op', 'y_ax_hardlims', [])
+    field_default('op', 'samp_period', nan)
+    
+    %% ========== STEP 1: Filter electrodes ==========
+    % Filter by responsiveness
+    if op.analyze_responsive_elcs_only
+         resp = resp(resp.rspv,:);
+    end
+    
+    % Filter by tuning
+    if op.analyze_tuned_elcs_only
+        if ~isfield(op, 'tuning_param')
+            error('op.analyze_tuned_elcs_only==1 but op.tuning_param not specified')
+        end
+        
+        if ~ismember(op.tuning_param, resp.Properties.VariableNames)
+            error('Tuning parameter "%s" not found in resp table', op.tuning_param)
+        end
+        
+        % Handle nested indexing (e.g., {'col_name', index})
+        if iscell(op.tuning_param)
+            col_name = op.tuning_param{1};
+            idx = op.tuning_param{2};
+            tuned_elcs = resp{:, col_name}(:, idx) < op.tuning_alpha;
+        else
+            tuned_elcs = resp{:, op.tuning_param} < op.tuning_alpha;
+        end
+        
+        resp = resp(tuned_elcs, :);
+    end
+    
+    if height(resp) == 0
+        error('No electrodes passed filtering criteria')
+    end
+    
+    %% ========== STEP 2: Define brain regions ==========
+    [resp, op] = define_brain_regions(resp, op);
+    
+    %% ========== STEP 3: Process each electrode ==========
+    n_elc = height(resp);
+    resp_by_cond = cell(n_elc, 1);
+    times_aligned = cell(n_elc, 1);
+    
+    for ielc = 1:n_elc
+        % Get this electrode's trials
+        subind = find(string(subs.sub) == resp.sub{ielc});
+        if isempty(subind)
+            error('Subject %s not found in subs table', resp.sub{ielc})
+        end
+        trials_this_elc = subs.trials{subind};
+        
+        % Add warped timecourse as resp_aligned
+        resp_tc = resp.timecourse{ielc};
+        if iscell(resp_tc)
+            trials_this_elc.resp_aligned = cell2mat(resp_tc);
+        else
+            trials_this_elc.resp_aligned = resp_tc;
+        end
+        
+        % Extract times
+        if ismember('times', resp.Properties.VariableNames)
+            trials_this_elc.times = resp.times{ielc};
+        end
+        
+        % Group by condition
+        op_temp = op;
+        op_temp.do_condition_sorting = 1;  % Always sort within electrode
+        
+        [~, align_stats, resp_grpd, ~] = sort_responses_by_condition_prealigned(trials_this_elc, op_temp);
+        
+        resp_by_cond{ielc} = resp_grpd;
+        times_aligned{ielc} = align_stats.times_aligned;
+        
+    end
+    
+    %% ========== STEP 4: Aggregate by condition & electrode ==========
+     cond_elc_data = [];
+    for ielc = 1:n_elc
+        resp_grpd_this = resp_by_cond{ielc};
+        
+        % Add metadata columns
+        n_conds = height(resp_grpd_this);
+        sub_col = repmat({resp.sub{ielc}}, n_conds, 1);
+        chan_col = repmat(resp.chan(ielc), n_conds, 1);
+        region_col = repmat({resp.region{ielc}}, n_conds, 1);
+        times_col = repmat({times_aligned{ielc}}, n_conds, 1);
+        
+        metadata = table(sub_col, chan_col, region_col, times_col, ...
+            'VariableNames', {'sub', 'chan', 'region', 'times'});
+        
+        cond_elc_data = [cond_elc_data; [metadata, resp_grpd_this]];
+    end
+    
+%% ========== STEP 5: Setup plotting ==========
+    if op.newfig
+        hfig = figure('color', 'w', 'WindowState', 'maximized');
+    end
+    
+    if op.analyze_tuned_elcs_only
+        figtitle = sprintf('Electrodes tuned to %s (p<%g)', op.tuning_param, op.tuning_alpha);
+    else
+        figtitle = 'No electrode tuning criteria';
+    end
+    sgtitle(figtitle, 'FontSize', 14, 'FontWeight', 'bold')
+    
+    % Calculate subplot grid
+    r = 1:op.nregions;
+    c = ceil(op.nregions ./ r);
+    [~, idx] = min(abs(c ./ r - 1/op.row_col_ratio));
+    op.n_plot_rows = r(idx);
+    op.n_plot_cols = c(idx);
+    
+    % Use tiledlayout for better spacing control
+    tiledlayout(op.n_plot_rows, op.n_plot_cols, 'Padding', 'compact', 'TileSpacing', 'compact');
+    
+    %% ========== STEP 6: Plot by region ==========
    
-
-
-
-% optional - eliminate electrodes marked as nonresponsive
-if op.analyze_responsive_elcs_only || ~ismember('rspv',resp.Properties.VariableNames)
-    resp = resp(resp.rspv,:); 
-end
-
-% optional - eliminate electrodes marked as not tuned to parameter of interest
-if op.analyze_tuned_elcs_only
-    tuned_elcs = resp{:,op.tuning_param} < op.tuning_alpha; 
-    resp = resp(tuned_elcs,:); 
-end
-
-[resp,op] = define_brain_regions(resp,op); 
-
-% make a copy of electrodes table for aligning and averaging responses
-n_elc = height(resp);
-resp_align = resp(:,{'sub','chan','region'}); 
-resp_align.times_aligned = cell(n_elc,1); 
-resp_align.resp_grpd = cell(n_elc,1); 
-
-temptab = table; 
-for ielc = 1:n_elc % % this loop can take a minute for >1000 electrodes if resp.timecourses_unaligned was not provided
-    subind = find(string(subs.sub) == resp.sub{ielc});
-    trials_this_elc = subs.trials{subind}; 
-
-    if ismember('timecourses_aligned', resp.Properties.VariableNames)
-        trials_this_elc.resp_aligned = resp.timecourses_aligned{ielc}{op.time_align_var,'trials'}{1}.resp_aligned; 
-    elseif ~ismember('timecourses_aligned', resp.Properties.VariableNames)
-        trials_this_elc.resp_unaligned = resp.timecourse{ielc};
+    cond_elc_rgn = cell(op.nregions, 1);
+    align_stats_rgn = cell(op.nregions, 1);
+    resp_grpd_rgn = cell(op.nregions, 1);
+    cfg_rgn = cell(op.nregions, 1);
+    
+    region_names = op.regiondef.region;
+    
+    for iregion = 1:op.nregions
+        this_region = region_names{iregion};
+        n_elcs_this_region = op.regiondef.n_elcs(iregion);
+        
+        % Create nexttile instead of subplot
+        hax = nexttile;
+        
+        % Extract data for this region
+        cond_elc_rgn{iregion} = cond_elc_data(strcmp(cond_elc_data.region, this_region), :);
+        
+        % Only plot if there's data AND enough electrodes
+        if height(cond_elc_rgn{iregion}) > 0 && n_elcs_this_region >= 2
+            
+            % Aggregate responses by condition at regional level
+            [align_stats_rgn{iregion}, resp_grpd_rgn{iregion}] = ...
+                aggregate_regional_responses(cond_elc_rgn{iregion}, op);
+            
+            cfg_rgn{iregion} = op;
+            cfg_rgn{iregion}.newfig = 0;
+            cfg_rgn{iregion}.do_condition_sorting = 0;  % Already sorted
+            cfg_rgn{iregion}.align_stats = align_stats_rgn{iregion};
+            cfg_rgn{iregion}.resp_grpd = resp_grpd_rgn{iregion};
+            
+            % Get a trials table for plotting structure
+            first_sub_idx = find(~cellfun(@isempty, subs.trials), 1);
+            trials_for_plotting = subs.trials{first_sub_idx};
+            
+            plot_resp_timecourse(trials_for_plotting, cfg_rgn{iregion});
+            
+        else
+            % Empty region - just add labels
+            set(hax, 'XTickLabel', [])
+            set(hax, 'YTickLabel', [])
+            hold(hax, 'on')
+            plot(hax, [0 1], [0 1], 'w')  % Invisible line to set up axes
+            hold(hax, 'off')
+        end
+        
+        % Add title for ALL regions (regardless of data)
+        title_str = sprintf('%s (n=%d elc)', this_region, n_elcs_this_region);
+        title(hax, title_str, 'FontSize', 10, 'FontWeight', 'bold', 'Interpreter', 'none');
+        
     end
-
-
-    [~, align_stats_this_elc, resp_grpd, ~] = sort_responses_by_condition(trials_this_elc,op); 
-    resp_align.times{ielc} = align_stats_this_elc.times_aligned; 
-    resp_align.resp_grpd{ielc} = resp_grpd; 
-
-    temptab = [temptab; repelem(resp_align(ielc, {'sub','chan','region','times'}), height(resp_grpd), 1)];
     
 end
 
-% create a table with one row per condition per electrode, with the (within-electrode) aligned mean response on a single condition
-%%% we will treat each electrode's mean response as a 'trial' for the purposes of the sort_responses_by_condition function
-cond_elc_resp_align = subsref(vertcat(resp_align.resp_grpd{:}), struct('type', '()', 'subs', {{':', {'condval', 'resp_mean','n_good_trials'}}}));
-cond_elc_resp_align = renamevars(cond_elc_resp_align, {'resp_mean','condval'}, {'resp_unaligned',op.sort_cond}); % no longer considered 'aligned' because we're now aligning across elcs
-cond_elc_resp_align = [temptab, cond_elc_resp_align];
-cond_elc_resp_align{:,op.time_align_var} = zeros(height(cond_elc_resp_align),1); % times are already zeroed within trial, so align times are all zero
-
-
-
-% align responses to each condition within each region
-region_resp = op.regiondef; 
-
-%% plot averaged timecourse within each region
-
-if op.newfig 
-    hfig = figure('color','w','WindowState', 'maximized');
-end
-
-if op.analyze_tuned_elcs_only
-    figtitle = {['electrodes meeting (', op.tuning_param, ' < ', num2str(op.tuning_alpha),')'],''};
-else
-    figtitle = {'no electrode tuning criteria',''};
-end
-
-sgtitle(figtitle);
-
-% % get number of rows and columns
-r = 1:op.nregions;  c = ceil(op.nregions./r);
-[~, idx] = min(abs(c./r - 1/op.row_col_ratio)); 
-op.n_plot_rows = r(idx); op.n_plot_cols = c(idx);
-
-
-%% construct trial table of xline event variables across subjects
-% for the purposes of plotting xline events
-subs_plotted = subs(contains(subs.sub, unique(resp.sub)),:);
-trials_all_subs = table; 
-for isub = 1:height(subs_plotted)
-    trials_all_subs = [trials_all_subs; subs_plotted.trials{isub}(:,{op.sort_cond,op.time_align_var,op.xline_events{1,:}})];
-end
-
-%% do plotting
-cond_elc_rgn = cell(op.nregions,1);
-align_stats_rgn = cell(op.nregions,1);
-resp_grpd_rgn  = cell(op.nregions,1);
-cfg_rgn   = cell(op.nregions,1);
-for iregion = 1:op.nregions
-    thisregion = region_resp.region{iregion}; 
-    hsubplot(iregion) = subplot(op.n_plot_rows,op.n_plot_cols,iregion);
-
-    if region_resp.n_elcs(iregion) > 1 % skip the region if there's less than 2 electrodes to plot
-        cond_elc_rgn{iregion} = cond_elc_resp_align(strcmp(cond_elc_resp_align.region,thisregion), :); % make table with only elcs in this region
+%% ========== HELPER: Sort by condition (pre-warped) ==========
+function [trials_out, align_stats, resp_grpd, op_out] = ...
+    sort_responses_by_condition_prealigned(trials, op)
     
-        cfg = [];
-        cfg.sort_cond = op.sort_cond; 
-        cfg.time_align_var = op.time_align_var;
-        cfg.sort_cond_vals = op.sort_cond_vals;
-        [cond_elc_rgn{iregion}, align_stats_rgn{iregion}, resp_grpd_rgn{iregion}, cfg_rgn{iregion}] = sort_responses_by_condition(cond_elc_rgn{iregion},cfg);
+    field_default('op', 'sort_cond_vals', {})
+    field_default('op', 'samp_period', nan)
+    field_default('op', 'sort_cond', '')
     
-        cfg = [];
-        cfg = op;
-        cfg.samp_period = cfg_rgn{iregion}.samp_period; 
-        cfg.do_condition_sorting = 0; % skip sorting, it's already done here
-        cfg.align_stats = align_stats_rgn{iregion}; 
-        cfg.resp_grpd = resp_grpd_rgn{iregion}; 
-        cfg.newfig = 0; 
-        plot_resp_timecourse(trials_all_subs,cfg); % nb: trials table here is only used to plot xline, not to compute response timecourses
+    %% Extract resp_aligned and convert to matrix if needed
+    resp_aligned = trials.resp_aligned;
+    
+    % Convert cell array to matrix if needed
+    if iscell(resp_aligned)
+        resp_aligned = cell2mat(resp_aligned);
     end
-
-    title([thisregion, ' (n=',num2str(region_resp.n_elcs(iregion)),' elc)'])
-
+    
+    % Ensure it's a 2D matrix (trials x timepoints)
+    if size(resp_aligned, 1) == 1
+        resp_aligned = resp_aligned';
+    end
+    
+    % Create minimal align_stats
+    if ismember('times', trials.Properties.VariableNames)
+        if iscell(trials.times)
+            times_aligned = trials.times{1};
+        else
+            times_aligned = trials.times(1, :);
+        end
+    else
+        % Estimate from response shape
+        times_aligned = 1:size(resp_aligned, 2);
+    end
+    
+    if isnan(op.samp_period)
+        op.samp_period = mean(diff(times_aligned));
+    end
+    
+    align_stats.times_aligned = times_aligned;
+    align_stats.n_tpoints_pre_fixed = length(times_aligned);
+    align_stats.n_tpoints_post_fixed = 0;
+    align_stats.samp_period = op.samp_period;
+    align_stats.mean = mean(resp_aligned, 1, 'omitnan');
+    align_stats.std = std(resp_aligned, [], 'omitnan');
+    align_stats.sem = align_stats.std ./ sqrt(sum(~isnan(resp_aligned), 1));
+    align_stats.sem_lims = [align_stats.mean + align_stats.sem; 
+                            align_stats.mean - align_stats.sem];
+    
+    %% Process sorting condition if specified
+    if strcmp(op.sort_cond, '')
+        % No sorting - return everything as single group
+        resp_grpd = table();
+        trials_out = trials;
+        op_out = op;
+        return
+    end
+    
+    % Check that sort_cond exists
+    if iscell(op.sort_cond)
+        sort_col = op.sort_cond{1};
+        sort_idx = op.sort_cond{2};
+    else
+        sort_col = op.sort_cond;
+    end
+    
+    if ~ismember(sort_col, trials.Properties.VariableNames)
+        error('Sort condition "%s" not found in trials table', sort_col)
+    end
+    
+    % Extract sort condition values
+    if iscell(op.sort_cond)
+        trials.sort_cond = trials{:, sort_col}(:, sort_idx);
+    else
+        trials.sort_cond = trials{:, sort_col};
+    end
+    
+    % Get unique condition values
+    if isempty(op.sort_cond_vals)
+        op.sort_cond_vals = unique(trials.sort_cond);
+    end
+    
+    % Convert numeric to string if needed
+    if isnumeric(op.sort_cond_vals)
+        op.sort_cond_vals(isnan(op.sort_cond_vals)) = [];
+        op.sort_cond_vals = cellstr(string(op.sort_cond_vals));
+    end
+    
+    [~, trial_cond_ind] = ismember(string(trials.sort_cond), op.sort_cond_vals);
+    nconds = length(op.sort_cond_vals);
+    
+    %% Group responses by condition
+    celcol = cell(nconds, 1);
+    resp_grpd = table(reshape(op.sort_cond_vals, [], 1), celcol, celcol, ...
+        'VariableNames', {'condval', 'resp', 'resp_mean'});
+    
+    for icond = 1:nconds
+        these_trial_inds = trial_cond_ind == icond;
+        resp_grpd.resp{icond} = resp_aligned(these_trial_inds, :);
+        resp_grpd.resp_mean{icond} = mean(resp_grpd.resp{icond}, 1, 'omitnan');
+        resp_grpd.std{icond} = std(resp_grpd.resp{icond}, 'omitnan');
+        resp_grpd.n_good_trials{icond} = sum(~isnan(resp_grpd.resp{icond}));
+        resp_grpd.sem{icond} = resp_grpd.std{icond} ./ sqrt(resp_grpd.n_good_trials{icond});
+    end
+    
+    trials_out = trials;
+    op_out = op;
+    
 end
 
-
-
+%% ========== HELPER: Aggregate responses by condition at regional level ==========
+function [align_stats, resp_grpd] = aggregate_regional_responses(cond_elc_data, op)
+    % Aggregate electrode-level grouped responses into regional averages
+    
+    % Get unique conditions, respecting op.sort_cond_vals if provided
+    if ~isempty(op.sort_cond_vals)
+        if isnumeric(op.sort_cond_vals)
+            requested_conds = cellstr(string(op.sort_cond_vals));
+        else
+            requested_conds = op.sort_cond_vals;
+        end
+        present_conds = unique(cond_elc_data.condval, 'stable');
+        [~, loc] = ismember(cellstr(string(requested_conds)), cellstr(string(present_conds)));
+        loc = loc(loc > 0);
+        unique_conds = present_conds(loc);
+    else
+        unique_conds = unique(cond_elc_data.condval, 'stable');
+    end
+    
+    nconds = length(unique_conds);
+    
+    % Initialize resp_grpd table
+    celcol = cell(nconds, 1);
+    resp_grpd = table(reshape(unique_conds, [], 1), celcol, celcol, ...
+        'VariableNames', {'condval', 'resp', 'resp_mean'});
+    
+    % Get times from first electrode
+    times_aligned = cond_elc_data.times{1};
+    
+    % Convert times to trial-relative (start at 0)
+    times_aligned = times_aligned - times_aligned(1);
+    
+    % Aggregate each condition
+    for icond = 1:nconds
+        cond_name = unique_conds{icond};
+        cond_mask = strcmp(cond_elc_data.condval, cond_name);
+        cond_data = cond_elc_data(cond_mask, :);
+        
+        % Stack all electrode means for this condition
+        resp_means = cell2mat(cond_data.resp_mean);
+        
+        % Compute regional statistics using nanmean
+        resp_grpd.resp{icond} = resp_means;
+        resp_grpd.resp_mean{icond} = nanmean(resp_means, 1);
+        resp_grpd.std{icond} = nanstd(resp_means);
+        resp_grpd.n_good_trials{icond} = sum(~isnan(resp_means));
+        resp_grpd.sem{icond} = resp_grpd.std{icond} ./ sqrt(resp_grpd.n_good_trials{icond});
+    end
+    
+    % Create align_stats
+    if isnan(op.samp_period)
+        op.samp_period = mean(diff(times_aligned));
+    end
+    
+    align_stats.times_aligned = times_aligned;
+    align_stats.n_tpoints_pre_fixed = length(times_aligned);
+    align_stats.n_tpoints_post_fixed = 0;
+    align_stats.samp_period = op.samp_period;
+    
+    % Use nanmean for grand average
+    all_means = cell2mat(resp_grpd.resp_mean);
+    align_stats.mean = nanmean(all_means, 1);
+    align_stats.std = nanstd(all_means);
+    align_stats.sem = align_stats.std ./ sqrt(nconds);
+    align_stats.sem_lims = [align_stats.mean + align_stats.sem;
+                            align_stats.mean - align_stats.sem];
+    
 end

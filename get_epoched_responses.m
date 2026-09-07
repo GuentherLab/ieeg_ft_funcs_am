@@ -1,120 +1,277 @@
-function [resp, trials] = get_epoched_responses(D_in,trials,op)
-
+function [resp, trials] = get_epoched_responses(D_in, trials, op)
 
     epochs = op.epochs; 
     nepochs = height(epochs); 
 
-    % table containing responses during epochs for each chan
+    % Ensure 'base' is present in op.epochs
+    assert(ismember('base', epochs.Properties.RowNames), ...
+        '''base'' must be a row in op.epochs');
+
     ntrials = height(trials);
     nchans = length(D_in.label);
-    nans_tr = nan(ntrials,1); 
-    false_tr = false(ntrials,1);
-    cel_trials = cell(ntrials,1); 
-    cel_chans_trials_nan = repmat({nans_tr},nchans,1); % 1 element per trial per chan
-    cel_chans_trials_false = repmat({false_tr},nchans,1);
-    resp = table(    D_in.label, cel_chans_trials_nan,   repmat({cel_trials},nchans,1), cel_chans_trials_false, ....
-      'VariableNames', {'chan', 'base',                  'timecourse',                  'good_trial'            }); 
-    epochvars = epochs.Properties.RowNames(~ismember(epochs.Properties.RowNames, {'trial', 'base'}));
+    nans_tr = nan(ntrials, 1); 
+    false_tr = false(ntrials, 1);
+    cel_trials = cell(ntrials, 1); 
+    cel_chans_trials_nan = repmat({nans_tr}, nchans, 1);
+    cel_chans_trials_false = repmat({false_tr}, nchans, 1);
+    
+    resp = table(D_in.label, cel_chans_trials_nan, repmat({cel_trials}, nchans, 1), repmat({cel_trials}, nchans, 1), cel_chans_trials_false, ....
+      'VariableNames', {'chan', 'base', 'timecourse_unwarped', 'timecourse', 'good_trial'}); 
+
+    % Initialize times_unwarped and times columns in trials table
+    trials.times_unwarped = cell(ntrials, 1);
+    trials.times = cell(ntrials, 1);
+
+    % Initialize columns for named epochs in response table (excluding 'base' since it populates resp.base)
+    epochvars = epochs.Properties.RowNames(~ismember(epochs.Properties.RowNames, {'base'}));
     for iepoch = 1:length(epochvars)
         thisepoch = epochvars{iepoch};
-        resp{:,thisepoch} = cel_chans_trials_nan;
+        resp{:, thisepoch} = cel_chans_trials_nan;
     end
 
+    % Ensure 'early_overlap_allowed' column exists (default to false if not provided)
+    if ~ismember('early_overlap_allowed', epochs.Properties.VariableNames)
+        epochs.early_overlap_allowed = false(nepochs, 1);
+    end
 
-    % make sure 'base' and 'trial' are on top; base required first so we can do baselining on all other epochs
-    assert([ismember('trial',epochs.Properties.RowNames) & ismember('base',epochs.Properties.RowNames)], ['''trial'' and ''base'' must be rows in op.epochs'])
-    [~, idx] = ismember(epochs.Properties.RowNames, {'base', 'trial'});
-            epochs = [epochs(idx == 1, :); epochs(idx == 2, :); epochs(idx == 0, :)]; 
-    
+    % Initialize X_epoch_early tracking columns in trials table ONLY where early overlap is allowed
+    for iep = 1:nepochs
+        ep_name = epochs.epoch{iep};
+        if ~strcmp(ep_name, 'base') && epochs.early_overlap_allowed(iep)
+            trials.([ep_name '_epoch_early']) = zeros(ntrials, 1);
+        end
+    end
 
+    %% 1. Pre-calculate all actual onset and offset times for each trial and check sequence order
+    onset_times = zeros(ntrials, nepochs);
+    offset_times = zeros(ntrials, nepochs);
     
-    % extract epoch-related responses, get phonemes on each trial
-    %%%% trials.times{itrial} use global time coordinates
-    %%%% ....... start at a fixed baseline window before stim onset
-    %%%% ....... end at a fixed time buffer after speech offset
-    for itrial = 1:ntrials % itrial is absolute index across sessions; does not equal "trial_id" from loaded tables
+    for itrial = 1:ntrials
         for iepoch = 1:nepochs
-            thisep = epochs.epoch{iepoch};
-
-            % process epoch onset and offset specifications
-            %%%% these can either be an event name in the trial trial, or a name and timeshift
-            thisep_onset = epochs.onset{iepoch};
-            if length(thisep_onset) == 1 % if only an event name was specified
-                onset_name = thisep_onset;
-                onset_shift = 0; % if no shifting off of the named event was specified, set it to zero
-            elseif length(thisep_onset) == 2 % if both an event name and time shift was specified
-                onset_name = thisep_onset{1};
-                onset_shift = thisep_onset{2};
-            end
-
-            thisep_offset = epochs.offset{iepoch};
-            if length(thisep_offset) == 1 % if only an event name was specified
-                offset_name = thisep_offset;
-                offset_shift = 0; % if no shifting off of the named event was specified, set it to zero
-            elseif length(thisep_offset) == 2  % if both an event name and time shift was specified
-                offset_name = thisep_offset{1};
-                offset_shift = thisep_offset{2};
-            end
-            assert(all(ismember({onset_name; offset_name}, trials.Properties.VariableNames)), ['epoch event name not found in trial table'])
-            assert(all(isnumeric([onset_shift; offset_shift])),'epoch event shift not numeric')
-
-
-            % find time inds constituting this epoch in this trial
-            match_time_inds = D_in.time{1} > trials{itrial,onset_name}+onset_shift & D_in.time{1} < trials{itrial,offset_name}+offset_shift; 
-
-            % if epoch is named 'trial', add 'starts' and 'ends' variables to trialtable and use it to create 'timecourse' variable, but don't process it further
-            % if epoch is named 'base', use it to compute baselines for other epochs
-            if strcmp(thisep,'trial')
-                trials.times{itrial} = D_in.time{1}(match_time_inds); % times in this trial window
-            end
-
-            % get response for each chan in each epoch
-            for ichan = 1:nchans
-                switch thisep
-                    case 'base'
-                        % use mean rather than nanmean, so that trials which had artifacts marked with NaNs will be excluded
-                        resp.base{ichan}(itrial) = mean( D_in.trial{1}(ichan, match_time_inds), 'includenan' ); % mean response during baseline
-
-                    case 'trial'
-                        cfg = [];
-                        cfg.baseval = resp.base{ichan}(itrial); 
-                        cfg.method = op.baseline_method; 
-                        resp.timecourse{ichan}{itrial} = do_baselining(D_in.trial{1}(ichan, match_time_inds), cfg); 
-
-                       %%% if response looks artifactually high or if baseline is nan, set/leave all response values for this trial to nan
-                       if isnan(resp.base{ichan}(itrial))   ||   max(resp.timecourse{ichan}{itrial}) > op.max_timecourse_base_ratio
-                            resp.timecourse{ichan}{itrial} = nan(size(resp.timecourse{ichan}{itrial}));
-                             resp.good_trial{ichan}(itrial) = false;
-                       else
-                           resp.good_trial{ichan}(itrial) = true;
-                       end
-
-                    otherwise %%% all other epochs
-                        if resp.good_trial{ichan}(itrial)
-                            cfg = [];
-                            cfg.baseval = resp.base{ichan}(itrial); 
-                            cfg.method = op.baseline_method; 
-                            resp{ichan,thisep}{1}(itrial) = mean(do_baselining(D_in.trial{1}(ichan, match_time_inds), cfg)); 
-                        elseif ~resp.good_trial{ichan}(itrial)
-                            resp{ichan,thisep}{1}(itrial) = nan; 
-                        end
+            onset_times(itrial, iepoch) = parse_epoch_time(epochs.onset{iepoch}, trials, itrial);
+            offset_times(itrial, iepoch) = parse_epoch_time(epochs.offset{iepoch}, trials, itrial);
+        end
+        
+        % Check that epochs appear in the order specified in the epochs table,
+        % allowing exceptions where early overlap is permitted for the subsequent epoch.
+        for iepoch = 1:(nepochs - 1)
+            if onset_times(itrial, iepoch) > onset_times(itrial, iepoch + 1)
+                if ~epochs.early_overlap_allowed(iepoch + 1)
+                    error('Epoch order violation on trial %d: "%s" (onset %.4f) occurs after "%s" (onset %.4f), violating the specified epochs table order.', ...
+                        itrial, epochs.epoch{iepoch}, onset_times(itrial, iepoch), ...
+                        epochs.epoch{iepoch+1}, onset_times(itrial, iepoch+1));
                 end
             end
         end
     end
-    resp.bad_elc = cellfun(@(x)all(isnan(x)),resp.base);
+
+    %% 2. Resolve Overlaps, Gaps, and Early Responses using Canonical Order
+    mean_onsets_all = mean(onset_times, 1);
+    [~, chrono_order] = sort(mean_onsets_all);
+    
+    dt = mean(diff(D_in.time{1}));
+
+    for itrial = 1:ntrials
+        res_onsets = onset_times(itrial, chrono_order);
+        res_offsets = offset_times(itrial, chrono_order);
+        allowed = epochs.early_overlap_allowed(chrono_order);
+        names = epochs.epoch(chrono_order);
+        
+        for k = 1:nepochs
+            % Clamp inherent negative durations
+            if res_offsets(k) < res_onsets(k)
+                res_offsets(k) = res_onsets(k);
+            end
+            
+            % Forward-pass overlap check
+            for j = (k + 1):nepochs
+                if res_onsets(j) < res_offsets(k) - 1e-5
+                    if allowed(j)
+                        overlap_dur = res_offsets(k) - res_onsets(j);
+                        trials{itrial, [names{j} '_epoch_early']} = ...
+                            trials{itrial, [names{j} '_epoch_early']} + overlap_dur;
+                        res_offsets(k) = res_onsets(j);
+                        if res_onsets(j) < res_onsets(k)
+                            res_onsets(k) = res_onsets(j);
+                        end
+                        warning('Overlap Allowed: Trial %d epoch "%s" started %.4fs early. Truncating preceding "%s" epoch.', ...
+                            itrial, names{j}, overlap_dur, names{k});
+                    else
+                        error('Overlap detected on trial %d between epoch "%s" (ends at %.4f) and epoch "%s" (starts at %.4f).', ...
+                            itrial, names{k}, res_offsets(k), names{j}, res_onsets(j));
+                    end
+                end
+            end
+        end
+
+        % Check for gaps between adjacent epochs in canonical order exceeding average timestep duration
+        for k = 1:(nepochs - 1)
+            gap = res_onsets(k+1) - res_offsets(k);
+            if gap > dt
+                error('Gap detected on trial %d between epoch "%s" (ends at %.4f) and epoch "%s" (starts at %.4f), exceeding timestep duration (%.4fs).', ...
+                    itrial, names{k}, res_offsets(k), names{k+1}, res_onsets(k+1), dt);
+            end
+        end
+        
+        onset_times(itrial, chrono_order) = res_onsets;
+        offset_times(itrial, chrono_order) = res_offsets;
+    end
+
+    %% 3. Extract unwarped epoch-related responses and trial timecourses
+    chrono_epochs = epochs(chrono_order, :);
+    
+    % Pre-compute 'base' responses first so they are available for baselining any epoch
+    for itrial = 1:ntrials
+        for iepoch = 1:nepochs
+            if strcmp(epochs.epoch{iepoch}, 'base')
+                t_on = onset_times(itrial, iepoch);
+                t_off = offset_times(itrial, iepoch);
+                match_time_inds = D_in.time{1} > t_on & D_in.time{1} < t_off; 
+                for ichan = 1:nchans
+                    resp.base{ichan}(itrial) = mean(D_in.trial{1}(ichan, match_time_inds), 'includenan');
+                end
+            end
+        end
+    end
+
+    for itrial = 1:ntrials
+        t_first = onset_times(itrial, chrono_order(1));
+        t_last = offset_times(itrial, chrono_order(end));
+        match_tr_inds = D_in.time{1} >= t_first & D_in.time{1} <= t_last;
+        trials.times_unwarped{itrial} = D_in.time{1}(match_tr_inds);
+
+        for iepoch = 1:nepochs
+            thisep = epochs.epoch{iepoch};
+            t_on = onset_times(itrial, iepoch);
+            t_off = offset_times(itrial, iepoch);
+
+            match_time_inds = D_in.time{1} > t_on & D_in.time{1} < t_off; 
+
+            for ichan = 1:nchans
+                if ~strcmp(thisep, 'base')
+                    if iepoch == chrono_order(1)
+                        cfg = [];
+                        cfg.baseval = resp.base{ichan}(itrial); 
+                        cfg.method = op.baseline_method; 
+                        
+                        tc_full = do_baselining(D_in.trial{1}(ichan, match_tr_inds), cfg); 
+                        resp.timecourse_unwarped{ichan}{itrial} = tc_full;
+
+                        if isnan(resp.base{ichan}(itrial)) || max(tc_full) > op.max_timecourse_base_ratio
+                            resp.timecourse_unwarped{ichan}{itrial} = nan(size(tc_full));
+                            resp.good_trial{ichan}(itrial) = false;
+                        else
+                            resp.good_trial{ichan}(itrial) = true;
+                        end
+                    end
+
+                    if resp.good_trial{ichan}(itrial)
+                        cfg = [];
+                        cfg.baseval = resp.base{ichan}(itrial); 
+                        cfg.method = op.baseline_method; 
+                        
+                        resp{ichan, thisep}{1}(itrial) = mean(do_baselining(D_in.trial{1}(ichan, match_time_inds), cfg)); 
+                    else
+                        resp{ichan, thisep}{1}(itrial) = nan; 
+                    end
+                end
+            end
+        end
+    end
+
+    %% 4. Calculate fixed segment sample counts for all epochs
+    fs = 1 / mean(diff(D_in.time{1}));
+    segment_dur_fix = chrono_epochs.dur_fix;
+    segment_N = round(segment_dur_fix * fs);
+    
+    target_N_total = round(sum(segment_dur_fix) * fs);
+    diff_N = target_N_total - sum(segment_N);
+    if diff_N ~= 0
+        [~, max_fill_idx] = max(segment_dur_fix);
+        segment_N(max_fill_idx) = segment_N(max_fill_idx) + diff_N;
+    end
+
+    %% 5. Linearly timewarp timecourses back-to-back and build warped times vector
+    for itrial = 1:ntrials
+        t_first = onset_times(itrial, chrono_order(1));
+        
+        warped_time_chunks = cell(1, nepochs);
+        running_t = t_first;
+        
+        for k = 1:nepochs
+            nPts = segment_N(k);
+            if nPts <= 0
+                warped_time_chunks{k} = [];
+                continue;
+            end
+            dur = segment_dur_fix(k);
+            t_end_w = running_t + dur;
+            
+            warped_time_chunks{k} = linspace(running_t, t_end_w, nPts);
+            running_t = t_end_w;
+        end
+        trials.times{itrial} = [warped_time_chunks{:}];
+
+        for ichan = 1:nchans
+            tc_unwarped = resp.timecourse_unwarped{ichan}{itrial};
+            t_unwarped = trials.times_unwarped{itrial};
+            
+            if isempty(tc_unwarped) || all(isnan(tc_unwarped))
+                resp.timecourse{ichan}{itrial} = nan(1, target_N_total);
+                continue;
+            end
+            
+            warped_chunks = cell(1, nepochs);
+            
+            for k = 1:nepochs
+                nPts = segment_N(k);
+                if nPts <= 0
+                    warped_chunks{k} = [];
+                    continue;
+                end
+                
+                t_start = onset_times(itrial, chrono_order(k));
+                t_end = offset_times(itrial, chrono_order(k));
+                
+                seg_mask = t_unwarped >= t_start & t_unwarped <= t_end;
+                t_seg_actual = t_unwarped(seg_mask);
+                tc_seg_actual = tc_unwarped(seg_mask);
+                
+                if length(t_seg_actual) < 2 || all(isnan(tc_seg_actual))
+                    warped_chunks{k} = nan(1, nPts);
+                else
+                    t_target = linspace(t_seg_actual(1), t_seg_actual(end), nPts);
+                    warped_chunks{k} = interp1(t_seg_actual, tc_seg_actual, t_target, 'linear', 'extrap');
+                end
+            end
+            
+            resp.timecourse{ichan}{itrial} = [warped_chunks{:}];
+        end
+    end
+
+    resp.bad_elc = cellfun(@(x) all(isnan(x)), resp.base);
+    resp.n_good_trials = cellfun(@(x)nnz(cellfun(@(y)~all(isnan(y)),x)),resp.timecourse);
 end
 
 
+%% Helper functions
 
-%% subfunction - takes a response (numerical array) and does baseline normalization used a specified method
-function normed_response = do_baselining(response,cfg)
+function t = parse_epoch_time(spec, trial_table, itrial)
+    if iscell(spec)
+        evt_name = spec{1};
+        shift = spec{2};
+    else
+        evt_name = spec;
+        shift = 0;
+    end
+    t = trial_table{itrial, evt_name} + shift;
+end
+
+function normed_response = do_baselining(response, cfg)
     switch cfg.method
         case 'subtract'
             normed_response = response - cfg.baseval; 
-
         case 'subtract_then_divide'
-            normed_response = [response - cfg.baseval] / cfg.baseval; 
+            normed_response = (response - cfg.baseval) / cfg.baseval; 
     end
 end
-

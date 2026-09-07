@@ -21,6 +21,7 @@ function [trials_out, align_stats, cfg_out] = align_timecourses(trials, cfg)
 
 % this option specifies how we decide the duration of aligned trials, which required cutting off some long trials and padding shorting trials
 field_default('cfg','trial_time_adj_method','median_plus_sd'); % options: mean, median, median_plus_stdev
+field_default('cfg','samp_period',nan) % if not specified, we will estimate it
 
 assert(isfield(cfg,'time_align_var') && any(contains(trials.Properties.VariableNames,cfg.time_align_var)))
 
@@ -41,9 +42,19 @@ ntrials = height(trials);
 
  trials = [trials, table(nans_tr,              nans_tr,...
      'VariableNames',     {'tpoints_pre_onset', 'tpoints_post_onset'})];
- 
- % compute sampling interval... assumes a static sample rate
- cfg.samp_period = 1e-5 * round(1e5 * diff(trials.times{1}(1:2))); 
+
+ %% estimate sample rate if not specified
+if isnan(cfg.samp_period) || isempty(cfg.samp_period)
+     % 1. Find the index of the first row where trials.times is not all NaNs
+    % cellfun handles the cell array contents of the table column
+    firstValidIdx = find(cellfun(@(x) ~all(isnan(x)), trials.times), 1);
+    
+    % 2. Extract that specific cell's array values
+    targetCellData = trials.times{firstValidIdx};
+    
+    % 3. Calculate the mean difference between values within that array
+    cfg.samp_period  = mean(diff(targetCellData));
+end
  
  %%% find trial lengths pre- and post- the alignment time
 for itrial = 1:ntrials
