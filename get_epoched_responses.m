@@ -157,7 +157,7 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
                         tc_full = do_baselining(D_in.trial{1}(ichan, match_tr_inds), cfg); 
                         resp.timecourse_unwarped{ichan}{itrial} = tc_full;
 
-                        if isnan(resp.base{ichan}(itrial)) || max(tc_full) > op.max_timecourse_base_ratio
+                        if isnan(resp.base{ichan}(itrial)) || isempty(tc_full) || max(tc_full) > op.max_timecourse_base_ratio
                             resp.timecourse_unwarped{ichan}{itrial} = nan(size(tc_full));
                             resp.good_trial{ichan}(itrial) = false;
                         else

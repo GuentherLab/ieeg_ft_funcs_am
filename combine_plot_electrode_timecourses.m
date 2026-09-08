@@ -14,6 +14,7 @@ function [cond_elc_rgn, align_stats_rgn, resp_grpd_rgn, cfg_rgn] = ...
     field_default('op', 'row_col_ratio', 4/3)
     field_default('op', 'sort_cond', '')
     field_default('op', 'sort_cond_vals', {})
+    field_default('op', 'regions_to_plot', {})
     field_default('op', 'smooth_windowsize', 30)
     field_default('op', 'smooth_method', 'gaussian')
     field_default('op', 'trace_width', 1.5)
@@ -92,6 +93,7 @@ function [cond_elc_rgn, align_stats_rgn, resp_grpd_rgn, cfg_rgn] = ...
         % Group by condition
         op_temp = op;
         op_temp.do_condition_sorting = 1;  % Always sort within electrode
+        op_temp.sort_cond = op.sort_cond; 
         
         [~, align_stats, resp_grpd, ~] = sort_responses_by_condition_prealigned(trials_this_elc, op_temp);
         
@@ -118,7 +120,32 @@ function [cond_elc_rgn, align_stats_rgn, resp_grpd_rgn, cfg_rgn] = ...
         cond_elc_data = [cond_elc_data; [metadata, resp_grpd_this]];
     end
     
-%% ========== STEP 5: Setup plotting ==========
+    %% ========== STEP 5: Filter regions to plot if requested & Setup plotting ==========
+    if ~isempty(op.regions_to_plot)
+        if ~iscell(op.regions_to_plot)
+            error('op.regions_to_plot must be a cell array of strings')
+        end
+        
+        region_names_all = op.regiondef.region;
+        valid_indices = [];
+        for i = 1:length(op.regions_to_plot)
+            req_reg = op.regions_to_plot{i};
+            idx = find(strcmp(region_names_all, req_reg), 1);
+            if isempty(op.regiondef.n_elcs(idx))
+                fprintf(1, '    Warning: Specified region "%s" does not cover any electrodes in the resp table.\n', req_reg);
+            else
+                valid_indices(end+1) = idx;
+            end
+        end
+        
+        if isempty(valid_indices)
+            error('None of the specified regions in op.regions_to_plot contain valid electrodes.')
+        end
+        
+        op.regiondef = op.regiondef(valid_indices, :);
+        op.nregions = height(op.regiondef);
+    end
+
     if op.newfig
         hfig = figure('color', 'w', 'WindowState', 'maximized');
     end
@@ -267,7 +294,7 @@ function [trials_out, align_stats, resp_grpd, op_out] = ...
     if iscell(op.sort_cond)
         trials.sort_cond = trials{:, sort_col}(:, sort_idx);
     else
-        trials.sort_cond = trials{:, sort_col};
+        trials.sort_cond = trials{:, op.sort_cond};
     end
     
     % Get unique condition values
