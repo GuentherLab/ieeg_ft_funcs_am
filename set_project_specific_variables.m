@@ -8,7 +8,6 @@
 %% a lot of the paths that get set below can be replaced by calling setpaths_dbs_triplet or setpaths_dbs_seq
 
 vardefault('op',struct);
-field_default('op','sub','DBS3012'); % triplet subject
 field_default('op','denoised',0); % 
 field_default('op','art_crit','G'); % default to high gamma 
 proj_str = regexprep(op.sub, '[0-9]', ''); % string that will tell us what project / collection site this subject is from

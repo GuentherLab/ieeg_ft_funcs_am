@@ -1,13 +1,19 @@
 function [resp, trials] = get_epoched_responses(D_in, trials, op)
+    ntrials = height(trials);
+    field_default('op', 'keep_unwarped_timecourse', false);
+    field_default('op', 'trials_to_analyze', true(ntrials, 1));
+    
+    % Validate op.trials_to_analyze
+    assert(length(op.trials_to_analyze) == ntrials, ...
+        'op.trials_to_analyze must be a logical array with the same height as trials.');
+    op.trials_to_analyze = logical(op.trials_to_analyze(:));
 
     epochs = op.epochs; 
     nepochs = height(epochs); 
-
     % Ensure 'base' is present in op.epochs
     assert(ismember('base', epochs.Properties.RowNames), ...
         '''base'' must be a row in op.epochs');
-
-    ntrials = height(trials);
+    
     nchans = length(D_in.label);
     nans_tr = nan(ntrials, 1); 
     false_tr = false(ntrials, 1);
@@ -17,23 +23,19 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
     
     resp = table(D_in.label, cel_chans_trials_nan, repmat({cel_trials}, nchans, 1), repmat({cel_trials}, nchans, 1), cel_chans_trials_false, ....
       'VariableNames', {'chan', 'base', 'timecourse_unwarped', 'timecourse', 'good_trial'}); 
-
     % Initialize times_unwarped and times columns in trials table
     trials.times_unwarped = cell(ntrials, 1);
     trials.times = cell(ntrials, 1);
-
     % Initialize columns for named epochs in response table (excluding 'base' since it populates resp.base)
     epochvars = epochs.Properties.RowNames(~ismember(epochs.Properties.RowNames, {'base'}));
     for iepoch = 1:length(epochvars)
         thisepoch = epochvars{iepoch};
         resp{:, thisepoch} = cel_chans_trials_nan;
     end
-
     % Ensure 'early_overlap_allowed' column exists (default to false if not provided)
     if ~ismember('early_overlap_allowed', epochs.Properties.VariableNames)
         epochs.early_overlap_allowed = false(nepochs, 1);
     end
-
     % Initialize X_epoch_early tracking columns in trials table ONLY where early overlap is allowed
     for iep = 1:nepochs
         ep_name = epochs.epoch{iep};
@@ -42,18 +44,42 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
         end
     end
 
-    %% 1. Pre-calculate all actual onset and offset times for each trial and check sequence order
+    %% Pre-calculate unusable trials mask & combine with trials_to_analyze
+    if ismember('unusable_trial', trials.Properties.VariableNames)
+        if iscell(trials.unusable_trial)
+            is_unusable_trial = cellfun(@(x) ~isempty(x) && logical(x), trials.unusable_trial);
+        else
+            unuse = trials.unusable_trial;
+            unuse(isnan(unuse)) = 0; % assume nan indicates trial is not unusable
+            is_unusable_trial = logical(unuse);
+        end
+    else
+        is_unusable_trial = false(ntrials, 1);
+    end
+
+    % Trials to skip are either marked unusable or excluded by op.trials_to_analyze
+    skip_trial = is_unusable_trial | ~op.trials_to_analyze;
+
+%% 1. Pre-calculate all actual onset and offset times for each trial and check sequence order
     onset_times = zeros(ntrials, nepochs);
     offset_times = zeros(ntrials, nepochs);
     
     for itrial = 1:ntrials
+        if skip_trial(itrial)
+            continue;
+        end
         for iepoch = 1:nepochs
             onset_times(itrial, iepoch) = parse_epoch_time(epochs.onset{iepoch}, trials, itrial);
             offset_times(itrial, iepoch) = parse_epoch_time(epochs.offset{iepoch}, trials, itrial);
         end
+
+        % Skip trials with missing/NaN event timestamps
+        if any(isnan(onset_times(itrial, :))) || any(isnan(offset_times(itrial, :)))
+            skip_trial(itrial) = true;
+            continue;
+        end
         
-        % Check that epochs appear in the order specified in the epochs table,
-        % allowing exceptions where early overlap is permitted for the subsequent epoch.
+        % Check that epochs appear in the order specified in the epochs table
         for iepoch = 1:(nepochs - 1)
             if onset_times(itrial, iepoch) > onset_times(itrial, iepoch + 1)
                 if ~epochs.early_overlap_allowed(iepoch + 1)
@@ -66,12 +92,15 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
     end
 
     %% 2. Resolve Overlaps, Gaps, and Early Responses using Canonical Order
-    mean_onsets_all = mean(onset_times, 1);
+    % Omit NaNs to compute proper average chronological order across valid trials
+    mean_onsets_all = mean(onset_times(~skip_trial, :), 1, 'omitnan');
     [~, chrono_order] = sort(mean_onsets_all);
     
     dt = mean(diff(D_in.time{1}));
-
     for itrial = 1:ntrials
+        if skip_trial(itrial)
+            continue;
+        end
         res_onsets = onset_times(itrial, chrono_order);
         res_offsets = offset_times(itrial, chrono_order);
         allowed = epochs.early_overlap_allowed(chrono_order);
@@ -103,7 +132,6 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
                 end
             end
         end
-
         % Check for gaps between adjacent epochs in canonical order exceeding average timestep duration
         for k = 1:(nepochs - 1)
             gap = res_onsets(k+1) - res_offsets(k);
@@ -122,6 +150,9 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
     
     % Pre-compute 'base' responses first so they are available for baselining any epoch
     for itrial = 1:ntrials
+        if skip_trial(itrial)
+            continue;
+        end
         for iepoch = 1:nepochs
             if strcmp(epochs.epoch{iepoch}, 'base')
                 t_on = onset_times(itrial, iepoch);
@@ -133,20 +164,19 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
             end
         end
     end
-
     for itrial = 1:ntrials
+        if skip_trial(itrial)
+            continue;
+        end
         t_first = onset_times(itrial, chrono_order(1));
         t_last = offset_times(itrial, chrono_order(end));
         match_tr_inds = D_in.time{1} >= t_first & D_in.time{1} <= t_last;
         trials.times_unwarped{itrial} = D_in.time{1}(match_tr_inds);
-
         for iepoch = 1:nepochs
             thisep = epochs.epoch{iepoch};
             t_on = onset_times(itrial, iepoch);
             t_off = offset_times(itrial, iepoch);
-
             match_time_inds = D_in.time{1} > t_on & D_in.time{1} < t_off; 
-
             for ichan = 1:nchans
                 if ~strcmp(thisep, 'base')
                     if iepoch == chrono_order(1)
@@ -156,7 +186,6 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
                         
                         tc_full = do_baselining(D_in.trial{1}(ichan, match_tr_inds), cfg); 
                         resp.timecourse_unwarped{ichan}{itrial} = tc_full;
-
                         if isnan(resp.base{ichan}(itrial)) || isempty(tc_full) || max(tc_full) > op.max_timecourse_base_ratio
                             resp.timecourse_unwarped{ichan}{itrial} = nan(size(tc_full));
                             resp.good_trial{ichan}(itrial) = false;
@@ -164,7 +193,6 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
                             resp.good_trial{ichan}(itrial) = true;
                         end
                     end
-
                     if resp.good_trial{ichan}(itrial)
                         cfg = [];
                         cfg.baseval = resp.base{ichan}(itrial); 
@@ -193,6 +221,12 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
 
     %% 5. Linearly timewarp timecourses back-to-back and build warped times vector
     for itrial = 1:ntrials
+        if skip_trial(itrial)
+            for ichan = 1:nchans
+                resp.timecourse{ichan}{itrial} = nan(1, target_N_total);
+            end
+            continue;
+        end
         t_first = onset_times(itrial, chrono_order(1));
         
         warped_time_chunks = cell(1, nepochs);
@@ -211,7 +245,6 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
             running_t = t_end_w;
         end
         trials.times{itrial} = [warped_time_chunks{:}];
-
         for ichan = 1:nchans
             tc_unwarped = resp.timecourse_unwarped{ichan}{itrial};
             t_unwarped = trials.times_unwarped{itrial};
@@ -250,12 +283,13 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
     end
 
     resp.bad_elc = cellfun(@(x) all(isnan(x)), resp.base);
-    resp.n_good_trials = cellfun(@(x)nnz(cellfun(@(y)~all(isnan(y)),x)),resp.timecourse);
+    resp.n_good_trials = cellfun(@(x) nnz(cellfun(@(y) ~all(isnan(y)), x)), resp.timecourse);
+    if ~op.keep_unwarped_timecourse
+        resp.timecourse_unwarped = [];
+    end
 end
 
-
 %% Helper functions
-
 function t = parse_epoch_time(spec, trial_table, itrial)
     if iscell(spec)
         evt_name = spec{1};

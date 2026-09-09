@@ -32,7 +32,6 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
     field_default('op', 'epoch_label_fontsize', 7)
     field_default('op', 'epoch_divider_linestyle', ':')
     field_default('op', 'epoch_divider_linewidth', 1.5)
-    field_default('op', 'leg_pos_adjust', 0.22)
     field_default('op', 'samp_period', nan)
     field_default('op', 'sort_cond_vals', {})
     
@@ -55,14 +54,17 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
         % Pre-computed grouping - use provided align_stats
         align_stats = op.align_stats;
         resp_grpd = op.resp_grpd;
-    elseif strcmp(op.sort_cond, '')
-        % No sorting - create minimal align_stats
-        [trials, align_stats, op] = minimal_align_prealigned(trials, op);
-        resp_grpd = table();
+    else
+        % No sorting or empty sort_cond - generate overall mean and SEM across all trials
+        [trials, align_stats, resp_grpd, op] = minimal_align_prealigned(trials, op);
     end
     
+    %% Track peak and trough across all signals + SEM bounds
+    global_data_max = -Inf;
+    global_data_min = Inf;
+    
     %% Plot error bands (SEM)
-    if ~strcmp(op.sort_cond, '') && height(resp_grpd) > 0
+    if ~isempty(resp_grpd) && height(resp_grpd) > 0
         nconds = height(resp_grpd);
         for icond = 1:nconds
             this_cond_sem_lims = [resp_grpd.resp_mean{icond} - resp_grpd.sem{icond};
@@ -78,6 +80,9 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
                     uplims = smoothdata(uplims, 2, op.smooth_method, op.smooth_windowsize);
                 end
                 
+                global_data_max = max([global_data_max, max(uplims), max(lowlims)]);
+                global_data_min = min([global_data_min, min(uplims), min(lowlims)]);
+                
                 times_plot = align_stats.times_aligned(plotinds);
                 hfill = fill(hax, [times_plot, fliplr(times_plot)], [lowlims, uplims], ...
                     [0.8 0.8 0.8], 'HandleVisibility', 'off');
@@ -90,7 +95,7 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
     
     %% Plot timecourses
     if isempty(op.condval_inds_to_plot)
-        if ~strcmp(op.sort_cond, '') && height(resp_grpd) > 0
+        if ~isempty(resp_grpd) && height(resp_grpd) > 0
             op.condval_inds_to_plot = 1:height(resp_grpd);
         else
             op.condval_inds_to_plot = 1;
@@ -99,7 +104,7 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
     
     nvals_to_plot = length(op.condval_inds_to_plot);
     
-    if ~strcmp(op.sort_cond, '') && height(resp_grpd) > 0
+    if ~isempty(resp_grpd) && height(resp_grpd) > 0
         timecourses_to_plot = cell2mat(resp_grpd.resp_mean(op.condval_inds_to_plot, :))';
         legend_strs = resp_grpd.condval(op.condval_inds_to_plot);
     else
@@ -110,6 +115,9 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
     if op.smooth_timecourses
         timecourses_to_plot = smoothdata(timecourses_to_plot, 1, op.smooth_method, op.smooth_windowsize);
     end
+    
+    global_data_max = max([global_data_max, max(timecourses_to_plot(:))]);
+    global_data_min = min([global_data_min, min(timecourses_to_plot(:))]);
     
     hold(hax, 'on')
     h_timecourse = plot(hax, align_stats.times_aligned, timecourses_to_plot);
@@ -124,17 +132,35 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
     yline(hax, 0, 'LineWidth', op.yline_zero_width, 'Color', op.yline_zero_color, ...
         'LineStyle', op.yline_zero_style);
     
-    %% Plot epoch backgrounds and labels
+    %% Dynamic Y-Axis Limits Adjustment (Headroom for Epoch Labels)
+    xlim(hax, [min(align_stats.times_aligned), max(align_stats.times_aligned)])
+    
+    if ~isempty(op.y_ax_hardlims)
+        ylim(hax, op.y_ax_hardlims);
+    elseif isfinite(global_data_max) && isfinite(global_data_min)
+        y_range = global_data_max - global_data_min;
+        if y_range == 0, y_range = 1; end
+        
+        % Set bottom limit (preserve baseline comfortably)
+        y_bottom = min(global_data_min - 0.05 * y_range, -0.02 * y_range);
+        
+        % If epochs are labeled, add headroom above highest peak/SEM for text labels
+        if ~isempty(op.epochs)
+            headroom_factor = 0.28; 
+            y_top = global_data_max + y_range * headroom_factor;
+        else
+            y_top = global_data_max + 0.08 * y_range;
+        end
+        
+        ylim(hax, [y_bottom, y_top]);
+    end
+    
+    %% Plot epoch backgrounds and labels AFTER y-limits are finalized
     if ~isempty(op.epochs)
         plot_epochs_on_timecourse(hax, op);
     end
     
     %% Formatting
-    xlim(hax, [min(align_stats.times_aligned), max(align_stats.times_aligned)])
-    if ~isempty(op.y_ax_hardlims)
-        ylim(hax, op.y_ax_hardlims)
-    end
-    
     xlabel(hax, 'Time (sec)')
     if isfield(op, 'resp_signal')
         ylabel(hax, ['normed ', op.resp_signal, ' power'])
@@ -144,6 +170,7 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
     
     set(gcf, 'Color', [1 1 1])
     
+    % Only show legend when actively sorting by condition
     if ~strcmp(op.sort_cond, '') && height(resp_grpd) > 0
         hleg = legend(hax, legend_strs{:}, 'Interpreter', 'none', 'Location', 'bestoutside');
         title(hleg, op.sort_cond)
@@ -158,8 +185,8 @@ function [trials_out, resp_grpd, align_stats, op_out] = plot_resp_timecourse(tri
 end
 
 %% ========== HELPER: Minimal alignment for pre-warped data ==========
-function [trials_out, align_stats, op_out] = minimal_align_prealigned(trials, op)
-    % For pre-warped data with no condition sorting
+function [trials_out, align_stats, resp_grpd, op_out] = minimal_align_prealigned(trials, op)
+    % For pre-warped data with no condition sorting (or empty sort_cond)
     
     field_default('op', 'samp_period', nan)
     
@@ -167,6 +194,14 @@ function [trials_out, align_stats, op_out] = minimal_align_prealigned(trials, op
         resp_aligned = trials.resp_aligned;
     else
         resp_aligned = cell2mat(trials.resp_unaligned);
+    end
+    
+    if iscell(resp_aligned)
+        resp_aligned = cell2mat(resp_aligned);
+    end
+    
+    if size(resp_aligned, 1) == 1
+        resp_aligned = resp_aligned';
     end
     
     if isnan(op.samp_period)
@@ -184,7 +219,6 @@ function [trials_out, align_stats, op_out] = minimal_align_prealigned(trials, op
         times_aligned = trials.times(1, :);
     end
     
-    % Convert to trial-relative (start at 0)
     times_aligned = times_aligned - times_aligned(1);
     
     align_stats.times_aligned = times_aligned;
@@ -194,6 +228,18 @@ function [trials_out, align_stats, op_out] = minimal_align_prealigned(trials, op
     align_stats.mean = nanmean(resp_aligned, 1);
     align_stats.std = nanstd(resp_aligned);
     align_stats.sem = align_stats.std ./ sqrt(sum(~isnan(resp_aligned), 1));
+    align_stats.sem_lims = [align_stats.mean + align_stats.sem; 
+                            align_stats.mean - align_stats.sem];
+    
+    % Populate 1-row resp_grpd for 'All Trials' so error bars and means plot seamlessly
+    celcol = cell(1, 1);
+    resp_grpd = table({'All Trials'}, celcol, celcol, ...
+        'VariableNames', {'condval', 'resp', 'resp_mean'});
+    resp_grpd.resp{1} = resp_aligned;
+    resp_grpd.resp_mean{1} = align_stats.mean;
+    resp_grpd.std{1} = align_stats.std;
+    resp_grpd.n_good_trials{1} = sum(~isnan(resp_aligned), 1);
+    resp_grpd.sem{1} = align_stats.sem;
     
     trials_out = trials;
     op_out = op;
@@ -201,8 +247,6 @@ end
 
 %% ========== HELPER: Plot epochs as backgrounds with labels and dividers ==========
 function plot_epochs_on_timecourse(hax, op)
-    % Plot epoch backgrounds, dividers, and text labels using axis coordinates only
-    
     epochs = op.epochs;
     
     %% Validate epochs_to_label
@@ -227,15 +271,13 @@ function plot_epochs_on_timecourse(hax, op)
     epoch_ends = epoch_starts + epochs.dur_fix;
     epoch_mids = epoch_starts + epochs.dur_fix/2;
     
-    %% Get current axis limits
+    %% Get current axis limits (which now include headroom)
     hold(hax, 'on')
     ylims = ylim(hax);
-    xlims = xlim(hax);
     y_range = ylims(2) - ylims(1);
     
     %% Draw epoch backgrounds using patch
     for iepoch = 1:height(epochs)
-        % Create patch for epoch background
         x_patch = [epoch_starts(iepoch), epoch_ends(iepoch), ...
                    epoch_ends(iepoch), epoch_starts(iepoch)];
         y_patch = [ylims(1), ylims(1), ylims(2), ylims(2)];
@@ -243,7 +285,7 @@ function plot_epochs_on_timecourse(hax, op)
         h_patch = patch(hax, x_patch, y_patch, op.epoch_colors(iepoch, :), ...
             'EdgeColor', 'none', 'FaceAlpha', op.epoch_alpha);
         set(h_patch, 'HandleVisibility', 'off');
-        uistack(h_patch, 'bottom');  % Send to back
+        uistack(h_patch, 'bottom');  % Send to back behind timecourse lines
     end
     
     %% Draw epoch dividers (vertical lines at epoch boundaries)
@@ -252,27 +294,22 @@ function plot_epochs_on_timecourse(hax, op)
             'LineWidth', op.epoch_divider_linewidth, 'Color', [0.5 0.5 0.5], ...
             'HandleVisibility', 'off');
     end
-    % Draw final epoch end boundary
     xline(hax, epoch_ends(end), 'LineStyle', op.epoch_divider_linestyle, ...
         'LineWidth', op.epoch_divider_linewidth, 'Color', [0.5 0.5 0.5], ...
         'HandleVisibility', 'off');
     
-    %% Add text labels for selected epochs - INSIDE PLOT AREA
-    % Position text labels at the top of each epoch, inside the plot
+    %% Add text labels for selected epochs inside top headroom margin
     for idx_label = 1:length(epochs_to_show)
         epoch_name = epochs_to_show{idx_label};
         
-        % Find index in epochs table
         epoch_idx = find(strcmp(epochs.epoch, epoch_name));
         if isempty(epoch_idx)
             continue
         end
         
-        % Position text at epoch midpoint, near top of plot
         x_text = epoch_mids(epoch_idx);
-        y_text = ylims(2) - 0.08 * y_range;  % 92% up from bottom
+        y_text = ylims(2) - 0.03 * y_range;  
         
-        % Create text object (no annotation box needed)
         text(hax, x_text, y_text, epoch_name, ...
             'FontSize', op.epoch_label_fontsize, ...
             'HorizontalAlignment', 'center', ...
@@ -295,20 +332,16 @@ function [trials_out, align_stats, resp_grpd, op_out] = ...
     field_default('op', 'samp_period', nan)
     field_default('op', 'sort_cond', '')
     
-    %% Extract resp_aligned and convert to matrix if needed
     resp_aligned = trials.resp_aligned;
     
-    % Convert cell array to matrix if needed
     if iscell(resp_aligned)
         resp_aligned = cell2mat(resp_aligned);
     end
     
-    % Ensure it's a 2D matrix (trials x timepoints)
     if size(resp_aligned, 1) == 1
         resp_aligned = resp_aligned';
     end
     
-    % Create minimal align_stats
     if ismember('times', trials.Properties.VariableNames)
         if iscell(trials.times)
             times_aligned = trials.times{1};
@@ -316,11 +349,9 @@ function [trials_out, align_stats, resp_grpd, op_out] = ...
             times_aligned = trials.times(1, :);
         end
     else
-        % Estimate from response shape
         times_aligned = 1:size(resp_aligned, 2);
     end
     
-    % Convert to trial-relative (start at 0)
     times_aligned = times_aligned - times_aligned(1);
     
     if isnan(op.samp_period)
@@ -337,16 +368,22 @@ function [trials_out, align_stats, resp_grpd, op_out] = ...
     align_stats.sem_lims = [align_stats.mean + align_stats.sem; 
                             align_stats.mean - align_stats.sem];
     
-    %% Process sorting condition if specified
     if strcmp(op.sort_cond, '')
-        % No sorting - return everything as single group
-        resp_grpd = table();
+        % If sort_cond is empty, return overall statistics as a single group
+        celcol = cell(1, 1);
+        resp_grpd = table({'All Trials'}, celcol, celcol, ...
+            'VariableNames', {'condval', 'resp', 'resp_mean'});
+        resp_grpd.resp{1} = resp_aligned;
+        resp_grpd.resp_mean{1} = align_stats.mean;
+        resp_grpd.std{1} = align_stats.std;
+        resp_grpd.n_good_trials{1} = sum(~isnan(resp_aligned), 1);
+        resp_grpd.sem{1} = align_stats.sem;
+        
         trials_out = trials;
         op_out = op;
         return
     end
     
-    % Check that sort_cond exists
     if iscell(op.sort_cond)
         sort_col = op.sort_cond{1};
         sort_idx = op.sort_cond{2};
@@ -358,29 +395,22 @@ function [trials_out, align_stats, resp_grpd, op_out] = ...
         error('Sort condition "%s" not found in trials table', sort_col)
     end
     
-    % Extract sort condition values
     if iscell(op.sort_cond)
         trials.sort_cond = trials{:, sort_col}(:, sort_idx);
     else
         trials.sort_cond = trials{:, sort_col};
     end
     
-    %% Handle sort_cond_vals: filter and order
     if ~isempty(op.sort_cond_vals)
-        % Convert sort_cond_vals and table conditions to string for robust comparison
         cond_vals_str = cellstr(string(op.sort_cond_vals));
-        
-        % Filter trials and obtain exact index mapping matching op.sort_cond_vals order
         [keep_trials, trial_cond_ind] = ismember(string(trials.sort_cond), string(cond_vals_str));
         
-        % Apply filter to trials and response matrix
         trials = trials(keep_trials, :);
         resp_aligned = resp_aligned(keep_trials, :);
         trial_cond_ind = trial_cond_ind(keep_trials);
         
         op.sort_cond_vals = cond_vals_str;
     else
-        % If not specified, get all unique values
         unique_vals = unique(trials.sort_cond);
         if isnumeric(unique_vals)
             unique_vals = unique_vals(~isnan(unique_vals));
@@ -392,7 +422,6 @@ function [trials_out, align_stats, resp_grpd, op_out] = ...
     
     nconds = length(op.sort_cond_vals);
     
-    %% Group responses by condition
     celcol = cell(nconds, 1);
     resp_grpd = table(reshape(op.sort_cond_vals, [], 1), celcol, celcol, ...
         'VariableNames', {'condval', 'resp', 'resp_mean'});
@@ -407,7 +436,6 @@ function [trials_out, align_stats, resp_grpd, op_out] = ...
             resp_grpd.n_good_trials{icond} = sum(~isnan(resp_grpd.resp{icond}));
             resp_grpd.sem{icond} = resp_grpd.std{icond} ./ sqrt(resp_grpd.n_good_trials{icond});
         else
-            % Empty condition
             resp_grpd.resp{icond} = [];
             resp_grpd.resp_mean{icond} = [];
             resp_grpd.std{icond} = [];
@@ -418,5 +446,4 @@ function [trials_out, align_stats, resp_grpd, op_out] = ...
     
     trials_out = trials;
     op_out = op;
-    
 end
