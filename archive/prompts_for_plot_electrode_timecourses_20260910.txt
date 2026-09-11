@@ -1,0 +1,9 @@
+This script averages electrode response within a brain region and produces the mean timecourse and error bars. I want you to adapt this as a new function plot_electrode_timecourses so that no electrodes are combined
+... instead, each electrode is given its own subplot. 
+Also, instead of generating error bars based on the sem across means of electrodes, it should be based on the sem of trials of a single electrode. 
+It should take the same op params to determine which electrodes from the resp table to include - tuning param, regions to plot, only plot responsive elc. 
+Also add an inclusion param op.subjects_to_plot, referring to the table var resp.sub. Add an op param op.plotrows and op.plotcolumns specifying how many subplots will go in each figure. 
+If there are more elcs to plot then can fit in 1 fig, make extra figs as necessary. plot the first fig full screen on the screen with the highest screen id, then fig 2 on the next screen, and then loop back to the first used screen if we get there.
+include thorough comments and description variable names
+-add an option op.screen_order - this shouldtake a numerical vector integers that specifies the order in which screens get chose
+-change hte placement of the legend so that it's always on the plot (not outside); find a spot where you can make sure the legend doesn't overlap with the epoch ext labels or timecourses/errorbars. if necessary, expand the y axis for a given plot to achieve this
