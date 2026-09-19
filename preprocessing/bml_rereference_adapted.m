@@ -21,6 +21,7 @@ function [ref,U] = bml_rereference_adapted(cfg,raw)
 %   'LAR', local average referencing
 %   'VAR', variable average referencing
 %   'bipolar', bipolar referencing
+%   '8chan_dbs_laplacian', Laplacian reref of the 8chan DBS arrangement with top/bottom and 2 3-electrode rings... added by Rohan D. 2026
 % cfg.percent - numeric, indicates percentage of labels in group used in
 %   trimmed mean. Defaults to 50. 
 % cfg.crossfading_width - scalar. Width in samples of the crossfading

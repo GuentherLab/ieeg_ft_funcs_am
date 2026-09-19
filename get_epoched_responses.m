@@ -1,7 +1,13 @@
+% process electrodes:
+.... get mean response within specified time windows per trial
+.... get warped timecourses based on epochs table
+.... add anatomical info from electrodes table to resp table (if op.electrodes_file is provided)
+
 function [resp, trials] = get_epoched_responses(D_in, trials, op)
     ntrials = height(trials);
-    field_default('op', 'keep_unwarped_timecourse', false);
-    field_default('op', 'trials_to_analyze', true(ntrials, 1));
+    field_default('op', 'keep_unwarped_timecourse', false)
+    field_default('op', 'trials_to_analyze', true(ntrials, 1))
+    field_default('op', 'electrodes_file', '')
     
     % Validate op.trials_to_analyze
     assert(length(op.trials_to_analyze) == ntrials, ...
@@ -23,6 +29,88 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
     
     resp = table(D_in.label, cel_chans_trials_nan, repmat({cel_trials}, nchans, 1), repmat({cel_trials}, nchans, 1), cel_chans_trials_false, ....
       'VariableNames', {'chan', 'base', 'timecourse_unwarped', 'timecourse', 'good_trial'}); 
+
+
+    %% add anatomical info from electrodes table to resp table (if op.electrodes_file is provided)
+    if ~isempty(op.electrodes_file)
+        electrode_vars_to_copy = {'chan','type','native_x','native_y','native_z',...
+            'mni_x','mni_y','mni_z',...
+	        'DISTAL_label_1','DISTAL_weight_1','DISTAL_label_2','DISTAL_weight_2','DISTAL_label_3','DISTAL_weight_3',...
+            'HCPMMP1_label_1','HCPMMP1_weight_1','HCPMMP1_label_2','HCPMMP1_weight_2','connector'};
+
+        resp = reref_chan_to_electrode_label(resp); % add 'electrode_label' field so we can match to pre-reref elc table
+        electrodes = readtable(op.electrodes_file, 'FileType','text', 'Delimiter','tab'); 
+        electrode_vars_to_copy = cellstr(electrode_vars_to_copy);
+        
+        missingVars = setdiff(electrode_vars_to_copy, electrodes.Properties.VariableNames);
+        if ~isempty(missingVars)
+            warning('electrodes:missingVarToCopy', ...
+                'Variables not found in electrodes table and will be skipped: %s', ...
+                strjoin(missingVars, ', '));
+        end
+        validVarsToCopy = setdiff(electrode_vars_to_copy, missingVars, 'stable');
+        
+        % normalize to string for matching
+        elcNames = string(electrodes.name);
+        respLabels = string(resp.electrode_label);
+        
+        % fail fast if any electrode name is duplicated AND used in resp
+        [G, uNames] = findgroups(elcNames);
+        cnt = splitapply(@numel, elcNames, G);
+        dupNames = uNames(cnt > 1);
+        if ~isempty(dupNames) && any(ismember(respLabels, dupNames))
+            bad = intersect(respLabels, dupNames);
+            error('Multiple electrodes rows match label "%s".', bad(1));
+        end
+        
+        % ensure target columns exist in resp
+        for j = 1:numel(validVarsToCopy)
+            vn = validVarsToCopy{j};
+            if ~ismember(vn, resp.Properties.VariableNames)
+                template = electrodes.(vn);
+                if isnumeric(template) || islogical(template)
+                    resp.(vn) = NaN(height(resp), 1);
+                elseif isstring(template)
+                    resp.(vn) = strings(height(resp),1);
+                    resp.(vn)(:) = missing;
+                elseif iscell(template)
+                    resp.(vn) = repmat({missing}, height(resp),1);
+                else
+                    resp.(vn) = repmat(missing, height(resp),1);
+                end
+            end
+        end
+        
+        % copy
+        for i = 1:height(resp)
+            idx = find(elcNames == respLabels(i));
+            if numel(idx) > 1
+                error('Multiple electrodes rows match label "%s" (resp row %d).', respLabels(i), i);
+            elseif numel(idx) == 1
+                for j = 1:numel(validVarsToCopy)
+                    vn = validVarsToCopy{j};
+                    resp.(vn)(i) = electrodes.(vn)(idx);
+                end
+            end
+        end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    end
+
+    %% initalize response computation
+
     % Initialize times_unwarped and times columns in trials table
     trials.times_unwarped = cell(ntrials, 1);
     trials.times = cell(ntrials, 1);
