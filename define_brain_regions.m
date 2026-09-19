@@ -6,25 +6,35 @@
 % if optional 'resp' table of electrodes is provided, then region labels will be added in table variable 'region'
 %%% this resp table will also be used to figure out which atlas we are using
 
-function [resp_out, op_out] = define_brain_regions(resp,op)
+function [labels_out, op_out] = define_brain_regions(labels_in,op)
 
+vardefault('labels_in',{}); 
 vardefault('op',struct); 
 field_default('op','include_bottom_all_row',0); % add bottom row labeled 'all'
 
-op_out = op; 
+% process labels_in variable type
+argtype = class(labels_in);
 
+labels_out = labels_in;
+switch argtype 
+    case 'cell' 
+        
+    case 'table' % expected to have 'chan' table variable
+        
+    otherwise 
+        errror('unrecognized labels list type')
+end
+
+% check if  we're using the HCP atlas 
 if exist('resp','var')
-    if any(contains(resp.Properties.VariableNames,'HCPMMP1_label_1')) % this variable should usually be in resp table for MGH data
+    if any(contains(labels_in.Properties.VariableNames,'HCPMMP1_label_1')) % this variable should usually be in resp table for MGH data
         op.atlas = 'hcp_distal'; 
     end
 end
+field_default('op','atlas','hcp_distal') % use atlas default if not yet defined
 
 switch op.atlas 
-
-    %% 
     case 'hcp_distal'
-
-
         % 1 = 'Area 1' (Fischl et al 2008, Geyer et al 1999, Geyer et al 2000) ... posterior postcentral gyrus
         % 2 = 'Area 2' ... postcentral sulcus
         % 3a = 'Area 3a'.... central sulcus
@@ -79,6 +89,10 @@ switch op.atlas
                         };
 
         op_out.atlas_var_names = {'HCPMMP1_label_1';'DISTAL_label_1'}; 
+
+    otherwise  % no other atlases implemented yet
+        error('unrecognized atlas') 
+
 end
 
 op_out.regiondef = table(region_areas(:,1), region_areas(:,2), nan(size(region_areas,1),1), 'Rownames', region_areas(:,1), 'VariableNames',...
@@ -93,18 +107,35 @@ if op.include_bottom_all_row
 end
 
 if exist('resp','var')
-    resp_out = resp; 
-    resp_out.region = cell(height(resp_out),1);
-    resp_out = movevars(resp_out,'region','Before',op_out.atlas_var_names{1}); 
+
+
+    argtype = class(labels_in);
+    
+    labels_out = labels_in;
+    switch argtype 
+        case 'cell' 
+            labels_out = replace(labels_out, chanmap.reref_label, chanma.electrode_label);
+        case 'table' % expected to have 'chan' table variable
+            labels_out.electrode_label = replace(labels_out.chan, chanmap.reref_label, chanmap.electrode_label);
+    %         labels_out = movevars(labels_out, 'electrode_label', 'After', 'chan'); 
+        case 'struct' % expected to be fieldtrip-formatted struct with 'labels' field
+            labels_out.electrode_label = replace(labels_out.label, chanmap.reref_label, chanmap.electrode_label);
+        otherwise 
+            errror('unrecognized electrode list type')
+    end
+
+    labels_out = labels_in; 
+    labels_out.region = cell(height(labels_out),1);
+    labels_out = movevars(labels_out,'region','Before',op_out.atlas_var_names{1}); 
     for iregion = 1:op_out.nregions
         thisregion = op_out.regiondef.region{iregion};
         for iatlas = 1:length(op_out.atlas_var_names) 
              atlas_var = op_out.atlas_var_names{iatlas}; 
-             elcs_in_this_region = ismember(resp_out{:,atlas_var},op_out.regiondef.areas{iregion}); 
-             resp_out.region(elcs_in_this_region) = {thisregion};
+             elcs_in_this_region = ismember(labels_out{:,atlas_var},op_out.regiondef.areas{iregion}); 
+             labels_out.region(elcs_in_this_region) = {thisregion};
         end
-        op_out.regiondef.n_elcs(iregion) = nnz(strcmp(resp_out.region,thisregion)); 
+        op_out.regiondef.n_elcs(iregion) = nnz(strcmp(labels_out.region,thisregion)); 
     end
 end
 
-
+op_out = op; 
