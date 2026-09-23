@@ -175,6 +175,8 @@ if op.include_bottom_all_row
     op_out.regiondef = [op_out.regiondef; table({'all'}, {{}}, {all_elcs}, 'VariableNames', regiondef_varnames, 'RowNames', {'all'})]; 
 end
 
+op_out.regiondef.n_elcs = cellfun(@length,op_out.regiondef.electrode_list);
+
 % Copy op to op_out (preserve any fields from input op)
 op_out = mergestruct(op_out, op);
 
