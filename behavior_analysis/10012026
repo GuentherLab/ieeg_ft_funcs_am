@@ -309,8 +309,8 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
             loc = '';
             frame = [];
             for si = 1:numel(err.stack)
-                if strcmp(err.stack(si).name,'annotate_disfluencies_video') || ...
-                        contains(err.stack(si).name,'annotate_disfluencies_video/')
+                if strcmp(err.stack(si).name,mfilename) || ...
+                        startsWith(err.stack(si).name,[mfilename '/'])
                     frame = err.stack(si); break;
                 end
             end
@@ -1631,7 +1631,8 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
         end
         [vdir,base] = fileparts(videoPath);
         defName = fullfile(vdir,[base '_annot-disfluencies.xlsx']);
-        [fn,fp] = uiputfile({'*.xlsx','Excel workbook (*.xlsx)'},'Save annotations',defName);
+        [fn,fp] = uiputfile({'*.xlsx','Excel workbook (*.xlsx)';'*.csv','CSV file (*.csv)'}, ...
+            'Save annotations',defName);
         if isequal(fn,0), return; end
         out = fullfile(fp,fn);
         if isempty(events)
@@ -1646,6 +1647,20 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
         end
         T = table(starts,ends,types,trans,notesv,durs, ...
             'VariableNames',{'starts','ends','event_type','transcript','notes','duration_s'});
+        [~,~,oext] = fileparts(out);
+        if strcmpi(oext,'.csv')                         % CSV chosen: no sheets
+            try
+                writeCsvManual(out,T.Properties.VariableNames, ...
+                    [num2cell(starts) num2cell(ends) types trans notesv num2cell(durs)]);
+            catch err
+                errordlg(sprintf('Could not save the annotations:\n\n%s',err.message),'Save error');
+                return;
+            end
+            dirty = false; updateTitle(); ok = true;
+            setStatus(sprintf('Saved %d event(s) to %s (saved time frames are only kept in .xlsx).', ...
+                numel(events),fn),'ok');
+            return;
+        end
         try
             if exist(out,'file'), delete(out); end      % avoid stale sheets
             writetable(T,out,'Sheet','events');
@@ -1655,9 +1670,20 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
                 writetable(F,out,'Sheet','time_frames');
             end
         catch err
-            errordlg(sprintf(['Could not save the annotations:\n\n%s\n\nIf the file is open ' ...
-                'in Excel, close it and try again.'],err.message),'Save error');
-            return;
+            % fallback: plain CSV written with base MATLAB only
+            [od,ob] = fileparts(out); outCsv = fullfile(od,[ob '.csv']);
+            try
+                writeCsvManual(outCsv,{'starts','ends','event_type','transcript','notes','duration_s'}, ...
+                    [num2cell(starts) num2cell(ends) types trans notesv num2cell(durs)]);
+            catch err2
+                errordlg(sprintf(['Could not save the annotations:\n\n%s\n\n%s\n\nIf the file ' ...
+                    'is open in Excel, close it and try again.'],err.message,err2.message),'Save error');
+                return;
+            end
+            out = outCsv; fn = [ob '.csv'];
+            warndlg(sprintf(['Excel saving failed on this MATLAB (%s), so the annotations ' ...
+                'were saved as a CSV file instead:\n\n%s\n\nIt loads back in the same way.'], ...
+                err.message,outCsv),'Saved as CSV');
         end
         dirty = false; updateTitle(); ok = true;
         setStatus(sprintf('Saved %d event(s) to %s',numel(events),fn),'ok');
@@ -1676,15 +1702,22 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
         if isequal(fn,0), return; end
         f = fullfile(fp,fn);
         try
-            T = readtable(f);
+            C = readAnnotCells(f,'events');
         catch err
-            errordlg(sprintf('Could not read the file:\n\n%s',err.message),'Load error'); return;
+            errordlg(sprintf(['Could not read "%s".\n\n%s\n\nTry re-saving it from Excel ' ...
+                'as .xlsx or .csv and load it again.'],fn,err.message),'Load error');
+            return;
         end
-        req = {'starts','ends','event_type','transcript','notes'};
-        vn = lower(T.Properties.VariableNames); col = zeros(1,5);
-        for j = 1:5, m = find(strcmp(vn,req{j}),1); if ~isempty(m), col(j) = m; end; end
+        if size(C,1) < 2
+            errordlg(sprintf('"%s" has no annotation rows.',fn),'Nothing to load'); return;
+        end
+
+        % find columns by header name (fall back to the first five columns)
+        hdr = lower(strtrim(cellfun(@toStr,C(1,:),'UniformOutput',false)));
+        req = {'starts','ends','event_type','transcript','notes'}; col = zeros(1,5);
+        for j2 = 1:5, m = find(strcmp(hdr,req{j2}),1); if ~isempty(m), col(j2) = m; end; end
         if any(col == 0)
-            if width(T) >= 5
+            if size(C,2) >= 5
                 col = 1:5;
             else
                 errordlg(sprintf(['This file does not look like an annotation file.\n\n' ...
@@ -1696,13 +1729,13 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
         typesBackup = eventTypes;
         newEv = struct('start',{},'end',{},'type',{},'transcript',{},'notes',{});
         nBad = 0; nOut = 0;
-        for i = 1:height(T)
-            st = toNum(T{i,col(1)}); en = toNum(T{i,col(2)});
+        for i = 2:size(C,1)
+            st = toNum(C{i,col(1)}); en = toNum(C{i,col(2)});
             if isnan(st) || isnan(en) || en <= st, nBad = nBad + 1; continue; end
             if st >= dur, nOut = nOut + 1; continue; end
             en = min(en,dur);
-            nm = toStr(T{i,col(3)}); if isempty(nm), nm = 'unlabelled'; end
-            tr = toStr(T{i,col(4)}); nt = toStr(T{i,col(5)});
+            nm = toStr(C{i,col(3)}); if isempty(nm), nm = 'unlabelled'; end
+            tr = toStr(C{i,col(4)}); nt = toStr(C{i,col(5)});
             ti = find(strcmpi({eventTypes.name},nm),1);
             if isempty(ti)
                 eventTypes(end+1) = struct('name',nm,'key','','style','-.','color',[0.5 0.5 0.5],'plain',false); %#ok<AGROW>
@@ -1711,36 +1744,39 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
             newEv(end+1) = struct('start',st,'end',en,'type',ti,'transcript',tr,'notes',nt); %#ok<AGROW>
         end
         skipNote = '';
-        if nBad > 0, skipNote = [skipNote sprintf('\n - %d row(s) with missing or invalid times will be skipped.',nBad)]; end
-        if nOut > 0, skipNote = [skipNote sprintf('\n - %d row(s) start after the end of this video and will be skipped.',nOut)]; end
+        if nBad > 0, skipNote = [skipNote sprintf('\n - %d row(s) with missing or invalid times were skipped.',nBad)]; end
+        if nOut > 0, skipNote = [skipNote sprintf('\n - %d row(s) start after the end of this video and were skipped.',nOut)]; end
         if isempty(newEv)
             eventTypes = typesBackup;
             errordlg(sprintf('No usable events were found in "%s".%s',fn,skipNote),'Nothing to load');
             return;
         end
 
+        % one question: merge, or load straight away (replacing current)
         mergeMode = false;
         if ~isempty(events)
-            c = questdlg(sprintf(['This video already has %d annotation(s).\n\n"%s" contains ' ...
-                '%d event(s). Do you want to add them to your current annotations (merge), ' ...
-                'or replace your current annotations with them?'],numel(events),fn,numel(newEv)), ...
-                'Load annotations','Merge with current','Replace current','Cancel','Merge with current');
+            c = questdlg(sprintf(['"%s" has %d event(s). This video already has %d.\n\n' ...
+                'Merge them into your current annotations, or load the file straight away ' ...
+                '(replacing the current ones)? Either way, Ctrl+Z undoes it.'], ...
+                fn,numel(newEv),numel(events)),'Load annotations', ...
+                'Merge into current','Load (replace current)','Cancel','Merge into current');
             switch c
-                case 'Merge with current'
+                case 'Merge into current'
                     mergeMode = true;
                     [nOverlap,isDup] = compareToCurrent(newEv);
-                    msg = sprintf(['Are you sure you want to continue?\n\n' ...
-                        'The annotations you are uploading may clash with the ones already on ' ...
-                        'this video:\n' ...
-                        ' - %d imported event(s) overlap in time with existing events\n' ...
-                        ' - %d exact duplicate(s) will be skipped\n' ...
-                        ' - %d new event(s) will be added%s\n\n' ...
-                        'Overlapping events are kept side by side - nothing already on the ' ...
-                        'timeline is changed or deleted. You can undo the whole import with Ctrl+Z.'], ...
-                        nOverlap,sum(isDup),sum(~isDup),skipNote);
-                    c2 = questdlg(msg,'Possible clash with current annotations', ...
-                        'Continue','Cancel','Cancel');
-                    if ~strcmp(c2,'Continue'), eventTypes = typesBackup; return; end
+                    if nOverlap > 0 || any(isDup)      % only warn when there is a real clash
+                        msg = sprintf(['Are you sure you want to continue?\n\n' ...
+                            'The annotations you are uploading clash with the ones already on ' ...
+                            'this video:\n' ...
+                            ' - %d imported event(s) overlap in time with existing events\n' ...
+                            ' - %d exact duplicate(s) will be skipped\n' ...
+                            ' - %d new event(s) will be added\n\n' ...
+                            'Overlapping events are kept side by side - nothing already on the ' ...
+                            'timeline is changed or deleted.'],nOverlap,sum(isDup),sum(~isDup));
+                        c2 = questdlg(msg,'Possible clash with current annotations', ...
+                            'Continue','Cancel','Continue');
+                        if ~strcmp(c2,'Continue'), eventTypes = typesBackup; return; end
+                    end
                     newEv = newEv(~isDup);
                     if isempty(newEv)
                         eventTypes = typesBackup;
@@ -1748,12 +1784,8 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
                             'Nothing new','help','replace');
                         return;
                     end
-                case 'Replace current'
-                    c2 = questdlg(sprintf(['Replace all %d current annotation(s) with the %d ' ...
-                        'event(s) from "%s"?%s\n\nYou can undo this with Ctrl+Z.'], ...
-                        numel(events),numel(newEv),fn,skipNote),'Replace annotations', ...
-                        'Replace','Cancel','Cancel');
-                    if ~strcmp(c2,'Replace'), eventTypes = typesBackup; return; end
+                case 'Load (replace current)'
+                    % load immediately
                 otherwise
                     eventTypes = typesBackup; return;
             end
@@ -1769,9 +1801,9 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
         % saved time frames (xlsx only; silently skipped if absent)
         nFr = 0;
         try
-            Fr = readtable(f,'Sheet','time_frames');
-            for i = 1:height(Fr)
-                nm = toStr(Fr{i,1}); a = toNum(Fr{i,2}); b = toNum(Fr{i,3});
+            Fc = readAnnotCells(f,'time_frames');
+            for i = 2:size(Fc,1)
+                nm = toStr(Fc{i,1}); a = toNum(Fc{i,2}); b = toNum(Fc{i,3});
                 if isempty(nm) || isnan(a) || isnan(b) || b <= a, continue; end
                 if any(strcmp({frames.name},nm)), continue; end
                 frames(end+1) = struct('name',nm,'a',a,'b',min(b,dur)); %#ok<AGROW>
@@ -1782,12 +1814,161 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
 
         currentEvent = []; selStart = NaN; selEnd = NaN;
         updateEventList(); updateFramesPopup(0); updateTitle(); refreshView();
-        setStatus(sprintf('%s %d event(s) from %s.',verb,numel(newEv),fn),'ok');
-        extra = '';
-        if nFr > 0, extra = sprintf('\n%d saved time frame(s) were also added.',nFr); end
-        if ~mergeMode && ~isempty(skipNote), extra = [extra sprintf('\n\nNote:%s',skipNote)]; end
-        msgbox(sprintf('%s %d event(s) from "%s".%s',verb,numel(newEv),fn,extra), ...
-            'Annotations loaded','help','replace');
+        msg = sprintf('%s %d event(s) from %s.',verb,numel(newEv),fn);
+        if nFr > 0, msg = [msg sprintf(' Also added %d saved time frame(s).',nFr)]; end
+        setStatus(msg,'ok');
+        if ~isempty(skipNote)
+            msgbox(sprintf('%s\n\nNote:%s',msg,skipNote),'Annotations loaded','help','replace');
+        end
+    end
+
+    function C = readAnnotCells(f,sheet)
+        % Read an annotation table as a cell array (row 1 = headers).
+        % Tries READTABLE, then READCELL, then a built-in reader that only
+        % needs base MATLAB (works even if the table-reading toolbox files
+        % are broken on this installation).
+        [~,~,ext] = fileparts(f); ext = lower(ext); isEvents = strcmp(sheet,'events');
+        msgs = {};
+        try
+            if isEvents, T = readtable(f,'TextType','char');
+            else,        T = readtable(f,'Sheet',sheet,'TextType','char'); end
+            C = [T.Properties.VariableNames; table2cell(T)]; return;
+        catch err
+            msgs{end+1} = ['readtable: ' err.message];
+        end
+        try
+            if isEvents, C = readcell(f); else, C = readcell(f,'Sheet',sheet); end
+            return;
+        catch err
+            msgs{end+1} = ['readcell: ' err.message];
+        end
+        try
+            switch ext
+                case '.csv'
+                    if ~isEvents, error('CSV files have no time-frame sheet.'); end
+                    C = readCsvManual(f);
+                case '.xlsx'
+                    C = readXlsxManual(f,sheet);
+                otherwise
+                    error('No built-in reader for %s files - save it as .xlsx or .csv.',ext);
+            end
+            return;
+        catch err
+            msgs{end+1} = ['built-in reader: ' err.message];
+        end
+        error('%s',strjoin(regexprep(msgs,'<[^>]*>',''),sprintf('\n')));
+    end
+
+    function C = readCsvManual(f)
+        txt = fileread(f);
+        if numel(txt) >= 1 && double(txt(1)) == 65279, txt = txt(2:end); end   % BOM
+        rows = {}; field = ''; row = {}; inQ = false; k = 1; n = numel(txt);
+        while k <= n
+            ch = txt(k);
+            if inQ
+                if ch == '"'
+                    if k < n && txt(k+1) == '"', field(end+1) = '"'; k = k + 1; %#ok<AGROW>
+                    else, inQ = false; end
+                else
+                    field(end+1) = ch; %#ok<AGROW>
+                end
+            elseif ch == '"'
+                inQ = true;
+            elseif ch == ','
+                row{end+1} = field; field = ''; %#ok<AGROW>
+            elseif ch == 10 || ch == 13
+                if ch == 13 && k < n && txt(k+1) == 10, k = k + 1; end
+                row{end+1} = field; field = ''; %#ok<AGROW>
+                if ~(numel(row) == 1 && isempty(row{1})), rows{end+1} = row; end %#ok<AGROW>
+                row = {};
+            else
+                field(end+1) = ch; %#ok<AGROW>
+            end
+            k = k + 1;
+        end
+        if ~isempty(field) || ~isempty(row), row{end+1} = field; rows{end+1} = row; end
+        if isempty(rows), C = cell(0,0); return; end
+        nc = max(cellfun(@numel,rows)); C = repmat({''},numel(rows),nc);
+        for r = 1:numel(rows), C(r,1:numel(rows{r})) = rows{r}; end
+        for r = 2:size(C,1)                 % numbers back to numbers
+            for q = 1:nc
+                v = str2double(C{r,q}); if ~isnan(v), C{r,q} = v; end
+            end
+        end
+    end
+
+    function C = readXlsxManual(f,sheet)
+        % Minimal .xlsx reader: unzip and parse the sheet XML with REGEXP.
+        tmp = tempname; unzip(f,tmp);
+        cleanTmp = onCleanup(@()rmdir(tmp,'s')); %#ok<NASGU>
+        wsDir = fullfile(tmp,'xl','worksheets');
+        if strcmp(sheet,'events'), sheetFile = fullfile(wsDir,'sheet1.xml');
+        else
+            % find the sheet by name in workbook.xml (sheets are numbered in order)
+            wb = fileread(fullfile(tmp,'xl','workbook.xml'));
+            names = regexp(wb,'<sheet[^>]*name="([^"]*)"','tokens');
+            names = cellfun(@(c)c{1},names,'UniformOutput',false);
+            idx = find(strcmpi(names,sheet),1);
+            if isempty(idx), error('Sheet "%s" not found.',sheet); end
+            sheetFile = fullfile(wsDir,sprintf('sheet%d.xml',idx));
+        end
+        if ~exist(sheetFile,'file'), error('Worksheet not found inside the .xlsx file.'); end
+        shared = {};
+        ssFile = fullfile(tmp,'xl','sharedStrings.xml');
+        if exist(ssFile,'file')
+            ss = fileread(ssFile);
+            si = regexp(ss,'<si>(.*?)</si>','tokens');
+            shared = cell(1,numel(si));
+            for q = 1:numel(si)
+                tt = regexp(si{q}{1},'<t[^>]*>(.*?)</t>','tokens');
+                shared{q} = xmlUnescape(strjoin(cellfun(@(c)c{1},tt,'UniformOutput',false),''));
+            end
+        end
+        x = fileread(sheetFile);
+        cells = regexp(x,'<c r="([A-Z]+)(\d+)"([^>]*?)(/>|>(.*?)</c>)','tokens');
+        C = {};
+        for q = 1:numel(cells)
+            colL = cells{q}{1}; r = str2double(cells{q}{2}); attrs = cells{q}{3};
+            body = ''; if numel(cells{q}) >= 5, body = cells{q}{5}; end
+            cIdx = 0; for L = colL, cIdx = cIdx*26 + (double(L)-64); end
+            v = regexp(body,'<v>(.*?)</v>','tokens','once');
+            tAttr = regexp(attrs,'t="([^"]*)"','tokens','once');
+            if ~isempty(tAttr) && strcmp(tAttr{1},'s') && ~isempty(v)
+                val = shared{str2double(v{1})+1};
+            elseif ~isempty(tAttr) && strcmp(tAttr{1},'inlineStr')
+                tt = regexp(body,'<t[^>]*>(.*?)</t>','tokens');
+                val = xmlUnescape(strjoin(cellfun(@(c)c{1},tt,'UniformOutput',false),''));
+            elseif ~isempty(tAttr) && strcmp(tAttr{1},'str') && ~isempty(v)
+                val = xmlUnescape(v{1});
+            elseif ~isempty(v)
+                val = str2double(v{1});
+            else
+                val = '';
+            end
+            C{r,cIdx} = val; %#ok<AGROW>
+        end
+        C(cellfun(@isempty,C)) = {''};
+    end
+
+    function s = xmlUnescape(s)
+        s = strrep(s,'&lt;','<'); s = strrep(s,'&gt;','>'); s = strrep(s,'&quot;','"');
+        s = strrep(s,'&apos;',''''); s = strrep(s,'&amp;','&');
+    end
+
+    function writeCsvManual(out,header,data)
+        fid = fopen(out,'w','n','UTF-8');
+        if fid < 0, error('Cannot open %s for writing.',out); end
+        closer = onCleanup(@()fclose(fid)); %#ok<NASGU>
+        fprintf(fid,'%s\n',strjoin(header,','));
+        for r = 1:size(data,1)
+            parts = cell(1,size(data,2));
+            for q = 1:size(data,2)
+                v = data{r,q};
+                if isnumeric(v), parts{q} = sprintf('%.6f',v);
+                else, parts{q} = ['"' strrep(char(v),'"','""') '"']; end
+            end
+            fprintf(fid,'%s\n',strjoin(parts,','));
+        end
     end
 
     function [nOverlap,isDup] = compareToCurrent(newEv)
@@ -2021,17 +2202,30 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
     end
 
     function x = toNum(v)
-        if iscell(v), v = v{1}; end
-        if isnumeric(v), x = double(v); else, x = str2double(string(v)); end
+        if iscell(v), if isempty(v), x = NaN; return; end; v = v{1}; end
+        if isempty(v) || isa(v,'missing'), x = NaN; return; end
+        if isnumeric(v) || islogical(v), x = double(v(1)); return; end
+        try, x = str2double(string(v)); catch, x = NaN; end
+        if isempty(x) || ismissing(x), x = NaN; end
     end
 
     function s = toStr(v)
-        if iscell(v), v = v{1}; end
-        if isnumeric(v)
-            if isnan(v), s = ''; else, s = num2str(v); end
-        else
-            s = char(string(v)); if strcmpi(s,'NaN')||strcmp(s,'<missing>'), s=''; end
+        % Any cell value -> char. Empty cells (which READCELL returns as
+        % <missing>) become ''.
+        if iscell(v), if isempty(v), s = ''; return; end; v = v{1}; end
+        if isempty(v) || isa(v,'missing'), s = ''; return; end
+        if ischar(v), s = strtrim(v); return; end
+        if isnumeric(v) || islogical(v)
+            if isnan(double(v(1))), s = ''; else, s = num2str(v(1)); end
+            return;
         end
+        try
+            if any(ismissing(v)), s = ''; return; end
+            s = strtrim(char(string(v)));
+        catch
+            s = '';
+        end
+        if strcmpi(s,'NaN') || strcmp(s,'<missing>'), s = ''; end
     end
 
     function onClose()
