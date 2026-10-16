@@ -113,6 +113,15 @@ ovMode = ''; ovGrab = 0; edtFrom = []; edtTo = []; btnGoTF = [];
 fig = []; statusTxt = []; infoTxt = []; viewTxt = []; lstEvents = []; annotDisp = [];
 popSpeed = []; chkLoop = []; videoDependent = [];
 selBar = []; btnBarPlay = []; chkBarLoop = []; popBarSpeed = []; SELBAR_W = 188;
+btnPlayDock = [];                        % docked Play / Pause button (navigation row)
+specContrast = 30;                       % spectrogram contrast 0-80 (shown range = 100 - contrast dB)
+specMax = NaN; sldContrast = [];         % loudest dB in view; contrast slider
+try
+    if ispref('DisfluencyAnnotator','specContrast')
+        specContrast = min(80,max(0,getpref('DisfluencyAnnotator','specContrast')));
+    end
+catch
+end
 vzoom = []; lastFull = [];               % video zoom region [x0 x1 y0 y1]; last full frame
 fcFrames = []; fcTimes = []; fcRange = []; fcZoom = []; fcStride = 1; fcFps = 30; fcLast = 0;
 vpanStart = [0 0]; vpanZoom = [];
@@ -333,24 +342,38 @@ uicontrol(pnlTips,'Style','text','Units','normalized','Position',[0.03 0.02 0.94
     'Word: highlight + Enter = fluent event selected.', ...
     'Part: highlight + Enter = tick type(s), Enter.', ...
     'W = whole episode. Esc = done. N = notes.', ...
+    'Zoom: Cmd/Ctrl + / -.  Z = highlight, A = all.', ...
+    'Contrast: [ less, ] more (or the slider).', ...
     'Space plays (L loop, 1-4 speed). F1 = help'});
 
 % ---- navigation row ------------------------------------------------------------
 uicontrol(fig,'Style','text','String','Navigate:','Units','normalized', ...
     'Position',[0.04 0.083 0.055 0.035],'HorizontalAlignment','left', ...
     'BackgroundColor',BG,'FontWeight','bold');
-btnZin   = mkBtn(fig,'Zoom in',        [0.095 0.087 0.065 0.040],@()zoomAbout(cursorCenter(),0.5), ...
-    'Zoom in around the cursor (Ctrl+I)');
-btnZout  = mkBtn(fig,'Zoom out',       [0.165 0.087 0.065 0.040],@()zoomAbout(cursorCenter(),2), ...
-    'Zoom out around the cursor (Ctrl+O)');
-btnZsel  = mkBtn(fig,'Fit selection',  [0.235 0.087 0.080 0.040],@zoomToSelection, ...
-    'Zoom to the current selection (Ctrl+N)');
-btnZall  = mkBtn(fig,'Full recording', [0.320 0.087 0.085 0.040],@fullView, ...
-    'Show the whole recording (Ctrl+A)');
+btnZin   = mkBtn(fig,'Zoom in (Cmd +)', [0.095 0.087 0.075 0.040],@()zoomAbout(zoomCenter(),0.5), ...
+    'Zoom in on the highlight / cursor (Ctrl/Cmd and +)');
+btnZout  = mkBtn(fig,'Zoom out (Cmd -)',[0.173 0.087 0.075 0.040],@()zoomAbout(zoomCenter(),2), ...
+    'Zoom out (Ctrl/Cmd and -)');
+btnZsel  = mkBtn(fig,'Fit selection (Z)',[0.251 0.087 0.095 0.040],@zoomToSelection, ...
+    'Zoom to the highlight (Z)');
+btnZall  = mkBtn(fig,'Full recording (A)',[0.349 0.087 0.100 0.040],@fullView, ...
+    'Show the whole recording (A)');
 chkLoop  = uicontrol(fig,'Style','checkbox','String','Loop (L)','Value',1,'Units','normalized', ...
-    'Position',[0.412 0.087 0.065 0.040],'BackgroundColor',BG,'ForegroundColor',[0 0 0], ...
+    'Position',[0.455 0.087 0.065 0.040],'BackgroundColor',BG,'ForegroundColor',[0 0 0], ...
     'TooltipString','Replay the selection over and over until you pause', ...
     'Callback',@(src,~)cb(@()setLoop(get(src,'Value')==1)));
+% docked Play / Pause (replaces the bar that floated over the spectrogram)
+btnPlayDock = mkBtn(fig,'Play (Space)',[0.525 0.087 0.085 0.040],@togglePlay, ...
+    'Play / pause the highlight (Space). Speed: 1-4 or the box on the right');
+% spectrogram contrast: slider, or keys [ (less) and ] (more)
+uicontrol(fig,'Style','text','String','Contrast','Units','normalized', ...
+    'Position',[0.615 0.090 0.045 0.028],'HorizontalAlignment','right', ...
+    'BackgroundColor',BG,'FontSize',9);
+sldContrast = uicontrol(fig,'Style','slider','Units','normalized', ...
+    'Position',[0.663 0.093 0.077 0.026],'Min',0,'Max',80,'Value',specContrast, ...
+    'SliderStep',[5/80 20/80], ...
+    'TooltipString','Spectrogram contrast - right = darker / more contrast. Keys [ and ]', ...
+    'Callback',@(src,~)cb(@()barDo(src,@()setContrast(get(src,'Value')))));
 viewTxt = uicontrol(fig,'Style','text','String','','Units','normalized', ...
     'Position',[0.07 0.176 0.36 0.024],'HorizontalAlignment','left', ...
     'BackgroundColor',BG,'FontSize',9);
@@ -411,7 +434,7 @@ set(findall(fig,'Style','text'),'ForegroundColor',[0 0 0]);
 set(findall(fig,'Type','uipanel'),'ForegroundColor',[0 0 0]);
 
 videoDependent = [edtFrom edtTo btnGoTF lstEvents btnPlayEv btnEditEv btnTypeEv btnDelEv ...
-    btnAddTxt btnAddFlu popSpeed btnZin btnZout btnZsel btnZall chkLoop ...
+    btnAddTxt btnAddFlu popSpeed btnZin btnZout btnZsel btnZall chkLoop btnPlayDock sldContrast ...
     btnLoadAnnot btnSave btnUndo btnPop];
 set(videoDependent,'Enable','off');
 
@@ -665,21 +688,10 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
     end
 
     function updateSelBar()
-        % Floating Play / Loop / speed / Create bar at the top of the selection.
-        if isempty(selBar) || ~ishghandle(selBar), return; end
-        % stays visible while you type a syllable's text: clicking another
-        % button saves the text and adds the next event
-        if isempty(vid) || ~hasSel() || ~isempty(pendingNew)
-            set(selBar,'Visible','off'); return;
-        end
-        axpix = getpixelposition(axSpec,true); xl = get(axSpec,'XLim');
-        w = SELBAR_W; h = 30;
-        mid = (max(selStart,xl(1)) + min(selEnd,xl(2)))/2;
-        f = (mid - xl(1))/max(diff(xl),eps);
-        px = axpix(1) + f*axpix(3) - w/2;
-        px = max(min(px, axpix(1)+axpix(3)-w), axpix(1));
-        py = axpix(2) + axpix(4) - h - 2;
-        set(selBar,'Position',[px py w h],'Visible','on');
+        % The floating bar over the spectrogram is retired: Play / Pause is
+        % docked in the navigation row, Loop is the Loop (L) box there, and
+        % speed is the box on the right (or keys 1-4).
+        if ~isempty(selBar) && ishghandle(selBar), set(selBar,'Visible','off'); end
         syncPlayBtn();
     end
 
@@ -709,8 +721,13 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
     end
 
     function syncPlayBtn()
-        if isempty(btnBarPlay) || ~ishghandle(btnBarPlay), return; end
-        if isPlaying, set(btnBarPlay,'String','Pause'); else, set(btnBarPlay,'String','Play'); end
+        if ~isempty(btnBarPlay) && ishghandle(btnBarPlay)
+            if isPlaying, set(btnBarPlay,'String','Pause'); else, set(btnBarPlay,'String','Play'); end
+        end
+        if ~isempty(btnPlayDock) && ishghandle(btnPlayDock)
+            if isPlaying, set(btnPlayDock,'String','Pause (Space)');
+            else, set(btnPlayDock,'String','Play (Space)'); end
+        end
     end
 
     function updateInfo()
@@ -1125,6 +1142,8 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
         shift = any(strcmp(e.Modifier,'shift'));
         if ctrl
             switch k
+                case {'equal','add'},       zoomAbout(zoomCenter(),0.5);   % Ctrl/Cmd + (bigger)
+                case {'hyphen','subtract'}, zoomAbout(zoomCenter(),2);     % Ctrl/Cmd - (smaller)
                 case 'o', zoomAbout(cursorCenter(),2);
                 case 'i', zoomAbout(cursorCenter(),0.5);
                 case 'n', zoomToSelection();
@@ -1154,6 +1173,11 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
             case 'n',                    editNotes();
             case 'l',                    setLoop(~loopOn);
             case {'1','2','3','4'},      setSpeedIdx(str2double(k));
+            % zoom in / out is Ctrl/Cmd + / - (above); these fit the view
+            case 'leftbracket',          setContrast(specContrast - 5);   % [ = less contrast
+            case 'rightbracket',         setContrast(specContrast + 5);   % ] = more contrast
+            case 'z',                    zoomToSelection();
+            case 'a',                    fullView();
             otherwise
                 q = find(strcmp({DISFL.key},k),1);
                 if ~isempty(q), onPartKey(DISFL(q).abbr); end
@@ -2318,8 +2342,14 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
             '  Double-click a highlight on the Notes strip, or click an item and press N\n' ...
             '  (or double-click it on the Notes strip), then type. The note sits at that\n' ...
             '  item''s time. The typing box is wide so you can see it all.\n\n' ...
+            'ZOOM (spectrogram, waveform and all strips together)\n' ...
+            '  Ctrl/Cmd + = zoom in, Ctrl/Cmd - = zoom out (centred on the\n' ...
+            '  highlight), Z = fit the highlight, A = whole recording.\n' ...
+            '  Spectrogram contrast: [ = less, ] = more, or the Contrast slider\n' ...
+            '  (remembered next time).\n\n' ...
             'PLAYBACK\n' ...
-            '  Space plays the highlight; pause keeps your place. L loops, 1-4 = speed.\n' ...
+            '  Space (or the Play button by Loop) plays the highlight; pause keeps your\n' ...
+            '  place. L loops, 1-4 = speed.\n' ...
             '  The highlighted video is loaded into memory first, so it plays smoothly.\n' ...
             '  Scroll on the video to zoom, drag to move, double-click / Fit to reset.\n' ...
             '  "Pop out video" puts it in its own resizable window.\n\n' ...
@@ -2373,8 +2403,12 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
             'K','Delete','Delete the selected item',[]; ...
             'K','Ctrl/Cmd + Z / S','Undo / save',[]; ...
             'K','Left / Right','Step one video frame (Shift: 1 s)',[]; ...
+            'K','Ctrl/Cmd  +','Zoom in (on the highlight / cursor)',[]; ...
+            'K','Ctrl/Cmd  -','Zoom out',[]; ...
+            'K','Z','Zoom to the highlight',[]; ...
+            'K','A','Show the whole recording',[]; ...
+            'K','[  /  ]','Spectrogram contrast less / more',[]; ...
             'K','Mouse wheel','Scroll (Ctrl/Cmd + wheel zooms)',[]; ...
-            'K','Ctrl/Cmd + I / O / N / A','Zoom in / out / to selection / all',[]; ...
             'K','F1','Full help',[]};
         lineH = 21; gapH = 8; sw = 640; colKey = 30; colDesc = 320;
         totalH = 16;
@@ -3663,9 +3697,23 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
         hSpecImg = imagesc(axSpec, Tc, F(fmask), P(fmask,:));
         set(axSpec,'YDir','normal','YLim',[0 maxFreq],'XLim',[viewStart viewEnd]);
         mx = max(max(P(fmask,:)));
-        if isfinite(mx), setCLim(axSpec,[mx-70 mx]); end
+        specMax = mx;
+        applyContrast();
         colormap(axSpec, flipud(gray(256)));
         set(hSpecImg,'PickableParts','none','HitTest','off'); uistack(hSpecImg,'bottom');
+    end
+
+    function applyContrast()
+        % Show the loudest (100 - contrast) dB: less range = darker, more contrast.
+        if isfinite(specMax), setCLim(axSpec,[specMax-(100-specContrast) specMax]); end
+    end
+
+    function setContrast(v)
+        specContrast = min(80,max(0,round(v)));
+        if ~isempty(sldContrast) && ishghandle(sldContrast), set(sldContrast,'Value',specContrast); end
+        applyContrast();
+        try, setpref('DisfluencyAnnotator','specContrast',specContrast); catch, end
+        setStatus(sprintf('Spectrogram contrast %d / 80  ([ less, ] more).',specContrast),'info');
     end
 
     function setCLim(ax,lims)
@@ -3860,6 +3908,11 @@ if ~isempty(initPath), cb(@()loadVideo(initPath)); end
 
     function c = cursorCenter()
         if isnan(cursorTime), c=(viewStart+viewEnd)/2; else, c=cursorTime; end
+    end
+
+    function c = zoomCenter()
+        % zoom keys / buttons centre on the highlight if there is one, else the cursor
+        if hasSel(), c = (selStart+selEnd)/2; else, c = cursorCenter(); end
     end
 
     function t = pointerTime()
