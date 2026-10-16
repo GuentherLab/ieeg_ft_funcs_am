@@ -33,7 +33,7 @@ function annotate_disfluencies_video(initialVideo)
 % Configuration
 % ----------------------------------------------------------------------------
 APPNAME = 'Disfluency Annotator';
-APPVER  = '4.1';
+APPVER  = '5';
 
 DISFL = struct( ...
     'abbr', {'rep',              'prol',               'bl',                 'td'}, ...
