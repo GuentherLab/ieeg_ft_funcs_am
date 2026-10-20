@@ -1,3 +1,5 @@
+% function [resp, trials] = get_epoched_responses(D_in, trials, op)
+% 
 % process electrodes:
 .... get mean response within specified time windows per trial
 .... get warped timecourses based on epochs table
