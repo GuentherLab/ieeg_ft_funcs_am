@@ -1,0 +1,124 @@
+create a matlab script for the following, which will be named ‘mark_ecog_on_ct’. in your response output, include copyable text and .m or .txt file with proper indenting, not word. include thorough comments. use matlab imaging processing toolbox if that will be useful. 
+I have a .nii CT file. The goal is to manually mark electrodes on 1 or 2 strips in 3d space. Each electrode contains a grid of 3x21 electrodes that need to be marked. 
+
+STARTING FUNCTION AND LOADING INITIAL DATA
+When it is called, it should first present a popop dialogue with a field for ‘Subject ID’. Prefill this with ‘DM10’. Create a structure variable ‘op’ (options). When user clicks ‘Load CT volume’, add the subject number to structure field op.sub. Check if ‘Y:’ is a directory that exists; if so, set op.root to ‘Y:’. If not, try ‘/Volumes/Nexus4’, and add it similarly if it exists. If that fails, open a windows file-opener dialogue box saying “Select root directory (should contain folder ‘DBS’)” and set op.root to the folder selected.  Then try to load the following NIFTI in Matlab:
+[op.root]\DBS\derivatives\sub-[SUBJECT]\ecogloc\rpreop\rpreop_ct.nii
+Display the subject name and the name of the name, including filepath, of the loaded .nii file at the top of the brain viewer portion of the gui described below. 
+Use the subfunction load_brain_volume described later. 
+Whether or not this file was successfully loaded, open the main GUI. The main part of the GUI, on the right side, taking up most of the gui, should be 3 views of the brain volume - coronal, axial, sagittal. If the .nii was successfully loaded, plot it in these 3 views.
+On the left side there will be various buttons and fields, include an interactive image of the electrode strips (see ‘ANNOTATING ELECTRODES’)
+
+NAVIGATING BRAIN VIEWER AND KEYBOARD SHORTCUTS
+include the following controls when the mouse is over one of the brain views:
+-ctrl + mouse scroll: zoom in / out - this should zoom in centered where the cursor is, not zooming to the center of the current view
+-z: zoom selection - same as button, see below
+-mouse scroll: shift to the next/previous plane in this view
+-right click + drag: drag the view (only if zoomed in)
+-arrow keys: move up/down/left/right in the current view (only if zoomed in)
+-e: mark next electrode. this will find the next electrode which has not been marked yet. The next electrode is not the lowest marked number. Instead, it is the dorsal-most, then posterior-most (see below), with all of strip 1 coming before all of strip 2, e.g. the order of electrodes goes 101, 122, 143, 102, 123, 144, 103, etc. 
+-o: toggle ‘Show out-of-plane electrodes’
+-c: toggle ‘Show view crosshairs’ on/off
+-d: delete electrode 
+-ctrl+o: Load electrode locations
+-ctrl+s: Save electrode locations
+….
+arrange the 3 views as 3 squares in a 2x2 grid. in the empty square, include a legend listing these commands/shortcuts. 
+….
+-include a scroll bar to the right of each of the 3 brainviews, with both clickable arrow keys and draggable bar. this enables the user to move through different plants of this view. 
+….
+-in the top right of each view, include a ‘maximize’ button. when this is clicked, make that view take up the whole 2x2 square; hide the other 2 views and the legend. replace ‘maximze’ with ‘minimize’, which restores the prior 2x2 arrangement. 
+-also include plus, minus, and ‘full’ buttons - these should zoom in, out, and zoom all the way out for this view
+-include ‘zoom selection’ button next to these - the symbol for this should be dotted line square - when clicked, turn the cursor into a dotted-line square - which allows the user to click and drag a selection on one of the views, then zooms to that selection; allow this to be a non-square selection, which will change the aspect ratio of the resulting view
+…..
+
+ANNOTATING ELECTRODES
+On the left side panel, there will be interactive schematic images of both of the 3x21 electrode strips. Strip 1 on the right. Electrode numbers are arranged such that electrode 101 is the dorsal-most and posterior-most electrode on strip one; this should be pictured as the top right slot. electrode 102 is the next electrode down on the same column [moving ventrally on the cortex], followed by 103. when we get to the bottom of the column (e121), we jump up to the top electrode on the middle column (e122). same for this column, then jump to the top of the third column (e143). then we go to the top right (dorsal-most posterior-most) electrode on the second strip, electrode 201. proceed the same way on strip 2. 
+Each electrode should have an associated color. Arrange the electrodes along ‘jet’ colormap [by rank, not absolute number] to assign color. 
+When the gui starts, create a table ‘electrodes’ with the following variables:
+-label - double - number described above
+-native_x - double, start as nan - x-location in brain space - gets filled when user marks electrode
+-native_y
+-native_z
+-color - 3-value RGB - see above
+….
+Arrange the buttons for each electrode in the shape of that strip. Each electrode will have the following buttons:
+-mark electrode - button label = the electrode number - when clicked, go into ‘mark electrode’ mode. the background of this button should be the electrode’s color; before the electrode has been assigned, it should be a faded version of the color; make it the full-non faded color once the electrode is assigned this should turn the cursor into a circle with the selected electrode’s color, along with the number of the electrode. also, draw a thick-lined box around this electrode’s button to make it clear which electrode is currently being assigned. when the user left clicks on any view, assign the x,y,z coordinates clicked for that electrode. add a checkmark next to that electrode’s button to indicate that it’s been assigned. then remove the box around that button to show it’s no longer currently being marked. 
+….if this button is clicked on an electrode that has already been assigned, center the views on the electrode location (like with the ‘go to electrode’ option below). then go into ‘mark electrode’ mode as described above. when a location is left clicked, update the location of this electrode to the newly picked location. 
+-go to electrode - button label = eye symbol - grey out the eye symbol if the electrode has not been assigned; eye becomes black once electrode is assigned. when clicked [if assigned], change the currently viewed planes on all 3 views so that this electrode is at the center, or as close to the center as possible if the electrode is near the edge of the image. keep all zoom levels in all 3 views what they were. draw a thick border around this eye button for all electrodes which are in the exact planes being viewed. so this should border be on for an electrode immediately just marked, if the view hasn’t changed. it should also be on when the eye is clicked, as the electrode will now be in the viewed plane. when this button is clicked for an electrode, also display a large circle around the electrode marker in each of the 3 views for 0.5, to show the user exactly where this marker is. the color of the large circle should be the inverse of the electrode’s color. 
+….
+include a ‘delete electrode button’ under the electrode strips; labeled as such - just one, not one per electrode. when this is clicked, it goes into delete electrode mode [so no longer in ‘mark electrode’ mode. in this mode, the user can either click on an electrode marker in the 3d viewers, or they can click on the electrode label in the electrode strip on the left side. this should use a subfunction ‘delete electrode’, which resets x y z in the electrodes table to nan, remove the marker from the 3d viewer, and resets the go-to-electrode eye button for that electrode to greyed out. in this mode, turn the cursor into a bold X. when the user hovers over an electrode in the 3d viewers or an electrode in the strip, draw a border around that electrode in both the electrode strip and in the 3d viewer, so that the user knows which electrode they are about to delete when they click. when the user clicks and drags in this mode in either one of hte 3d viewers or in the space of the electrode strip panel, this will allows them to draw a box. any electrodes selected within this box should become highlighted like when hovering over them - then popup a box asking ‘Delete the selected X’ electrodes, where X is the number selected - with options ‘Delete’ or ‘cancel’. If ‘Delete’, run the subfunction for selected electrodes. If ‘Cancel’, then de-select the previously selected electrodes. 
+in delete electrode mode, in the legend box, bring up text with a light red background giving instructions about how to use this mode: 
+“Click electrode in the 3d viewer or ECoG strip to delete marker.
+Or click and drag to delete multiple electrode markers.” 
+
+OTHER CONTROLS
+Include an option (starts ON) ‘Show out-of-plane electrodes’. The user can click this button to turn on or off, which will be indicated by a X or checkmark next to it. When it is on, electrode markings should be shown in all views regardless of whether they are visible in the currently-viewed plane, that is, they should be projected onto the current plane. within-plane electrodes should be displayed on the brain with larger dot than the out-of-plane electrodes. When off, only show markings on this exact plane. 
+….
+Include an option (starts ON) ‘Show view crosshairs’. (x or check mark, as above). When on, the each view should have a gray dotted line crosshair indicating where the other two view’s planes are. 
+….
+for all buttons, when the user hovers for 400ms, show a tooltip with a brief description, e.g. ‘Show out-of-plane electrodes’ or ‘Go to electrode’
+
+SAVING/LOADING VOLUME AND ANNOTATIONS
+Include a button ‘Load brain volume’. Create a subfunction load_brain_volume for doing this, including the checks described. When this is clicked, open a windows explorer file loader dialogue - start in [op.root]\DBS\derivatives\sub-[SUBJECT]\ecogloc\rpreop. Have it look for a file called ‘rpreop_ct.nii.’ When a file is selected, first check whether it’s a .nii file and whether it was successfully loaded as a 3d volume in the Matlab workspace. If either of these checks fails, pop up a notification box saying ‘Failed to load [FILENAME]’ and state the reason why. 
+Then, if there are unsaved electrode annotations (see below), pop up a dialogue box saying “There are unsaved electrode annotations. Clear these annotations?” with ‘yes’ and ‘no’ options. If yes [or if we didn’t need to pop up this dialogue], clear the current electrode annotations and the loaded brain volume, and load this new brain volume in its place.
+If file was loaded from a folder formatted like \DBS\derivatives\sub-[SUBJECT]\ecogloc\, then take the [SUBJECT] string and update the subject number in structure field op.sub. The subfunction should also update the subject name and filename listed at the top of the 3d viewer portion of the gui.  
+…..
+Include a button ‘Load electrode locations’. This should run the subfunction load_electrode_locations. 
+-If no brain is currently loaded, open dialogue box saying ‘Please load brain volume before electrode locations’ with button ‘Load brain’. When ‘Load brain’ is clicked, run the load_brain_volume subfunction to load a brain volume
+-Once a brain is loaded or if it was already present, the load_electrode_locations should open a windows file loader dialogue - start in [op.root]\DBS\derivatives\sub-[SUBJECT]\ecogloc and look for a file named ‘sub-[SUBJECT]_eleclocalizer-native-coords.tsv’. 
+-Load the tsv as a table ‘electrodes_loaded’. If some electrodes have already been marked (if electrodes exists has some non-nan entries),  pop up a dialogue box saying “Replace current electrode annotations?” with options ‘Replace’ and ‘Cancel’. Only proceed if ‘Replace’ was clicked.  
+-Check the following of electrodes_temp:
+------has ‘labels’, ‘native_x’, ‘native_y’, ‘native_z’ in the formats described above
+------x y z locations exist within the currently loaded brainspace (e.g. could be plotted within the 3d viewer windows
+------has rows for all electrodes on either strip 1, strip 2, or both; the ‘labels’ strings should have the format and number described in ANNOTATING ELECTRODES
+-if any checks fail, pop up a dialogue box describing the problem, with ‘OK’ button. clear electrodes_temp variable. 
+-if checks pass, clear table variables except ‘labels’, ‘native_x’, ‘native_y’, ‘native_z’, and (if present) ‘color’; then save electrodes_temp over electrodes and clear electrodes_temp; update all parts of the gui to reflect the new electrode data. in the 3d viewers, zoom out full and move the currently viewed planes to have the first marked electrode visible.
+…
+Include button ‘Save electrode locations’ - runs subfunction load_electrode_locations. 
+-there should be a logical variable ‘unsaved_electrode_changes’ - start as false. when a new set of electrode markings is successfully loaded, this variable becomes false. when any changes are made to electrode markings, it becomes true. when electrodes are saved with load_electrode_locations, unsaved_electrode_changes becomes false.
+-when load_electrode_locations is run, open windows explorer file saver dialogue box - start in [op.root]\DBS\derivatives\sub-[SUBJECT]\ecogloc. set the filename to ‘sub-[SUBJECT]_eleclocalizer-native-coords.tsv’. this should save the variable ‘electrodes’ as a .tsv table file
+-if one of the 2 strips has no electrodes, then do not include any of the electrodes on this strip in the table that gets saved
+……
+……..
+follow ups (gemini): 
+make these changes:
+-rearrange the ecog schematic electrodes so that strip 1 (101 to 163) is on the right of strip 2. 101 is the top right (within that panel), then to immediately to the left is 122, then 143, so that the schematic is layed out like hte strip itself. 121 will be a the bottom of the column that 101 is at the top of. then a similar arrangement of strip 2, with a line dividing strip 1 from strip 2
+-the scroll wheel is not moving across planes. fix.
+-when I click on an electrode in the schematic to enter marking mode for it, the cursor does turn into a circle, but it is not the color of that electrode. fix that. it also does nothing when i click on the brain plot (it does not add a marker). fix.
+-there is no scrollbar next to the brain panels for moving through planes within that view. add it.
+-at the top, it says 'Volume: DM1057'. This should say 'Subject' , not 'Volume' 
+……
+scrollbar is now working, 'go to electrode' is working. marking electrodes is working. make these adjustments:
+-move scroll wheel is still not working, to move planes within a brain view. fix.
+-numbers on the elecrtrodes are difficult to see in some cases - white on light colors. Keep the colors; however, just behind behind the number, make it black highlight, keep white text. surrounding this highlighted number text, it will still be the electrode color on the electrode button. do the same - black highlight around white text.
+-at the top of the electrode schematics, at title/lable 'Strip 1' and 'Strip 2'
+-on the tick buttons for 'show out of plane electrodes', add (o) to the end of the text lable indicate the keyboard shortcut. do the same for 'show view crosshair' and (c). these keyboard shortcuts are also not working - fix.
+-the scrollbars don't have up and down arrows on them to advance one plane at a time. add them.
+-change the 'o' that is used place of the eye icon I originally requested (which was too large to include as an eye) to a small arrow symbol pointing at the electrode button. make it small gray on black background when the electrode is not marked. make it small white on black background when it is marked but out of plane. when it is in plane, make the arrow white and larger.
+-change the text 'keyboard shortcuts' to 'controls'
+…..
+make the following changes: 
+-make the colors of non-selected electrodes a bit more faded/greyish, to make a larger contrast distinction from marked electrodes 
+-add the ‘maximize’ button for each of the 3 brain views from the original request (turns to ‘restore’ once one view is maximized); keyboard shortcutt ‘m’; add to the list of keyboard shortcuts; make sure to include (m) at the end of the button label
+-to draw more attention to in-plane electrodes: when they are in plane, in addition to making  the arrow larger, flip it from white arrow on black background to be black arrow on white background
+-change the text 'keyboard shortcuts' to 'controls' - this was not changed from last time
+-add these keyboard shortcuts from the original request - indicate them on both the buttons for these functions and the list of ‘Controls’: ctrl+o: Load electrode locations……. ctrl+s: Save electrode locations
+-in ‘Controls’ panel, change text for ‘Scroll’ to: ‘Mouse wheel scroll: shift view plane’......... ‘Delete mode’ - change to ‘Delete marker mode’; also move this one to under ‘Mark next electrode’......... ‘Toggle out-of-plane’ - change to ‘Toggle out-of-plane electrode visibility’
+……
+make the following changes: 
+-the electrode buttons don’t all quite fit in view on a 1080p height monitor - only 15 of the 21 desired rows are visible. do the following to free up vertical space. if they still don’t all fit, reduce button and font size until they all do fit
+----get rid of the upper title ‘ECoG Strips and Controls’; get rid of title ‘Electrode Marking’
+----shorten ‘Delete Marker Mode’ to ‘Delete marker’ ; put it on the same line as the 2 ‘show’ toggles
+-put load-electrode and save-electrode buttons on the same line side by side
+-the ‘delete marker’ button doesn’t seem to be working; i can click it and the cursor changes, but nothing happens when I hover over an electrode marker or click on it, and same for hovering over an electrode button in the strip schematic and clicking on them [the marker remains]. you can ignore the request in the original prompt about clicking and dragging to delete multiple electrodes at once - it should just work on a single electrode at once. also, when we go into delete mode, highlight the delete button in red. 
+-currently, i can click on the black portion of the electrode button to enter ‘mark electrode’ mode for that electrode. clicking the colored portion of the button surrounding the number doesn’t do anything. make it so that clicking the colored portion also has us enter the mode for assigning the electrode. (make sure that the arrow button is still reserved for go-to-electrode)
+-while loading CT volume, add a popup saying ‘Loading’ and list the CT volume being loaded
+-in the top bar over the brain views, add ‘...........’ separating the subject and the filepath to make them more clearly separated
+……
+-the electrode panel almost displays all electrodes (screenshot), but we need to consolidate vertically a bit more to fit the last 2 electrode rows. shorten the top 3 buttons to 'Load CT', 'Load Electrodes (Ctrl+O)', 'Save Electrodes (Ctrl+S)', and try to put them on the same line. also try to get rid of some of the unused/blank space in the top part of the left panel to save more space. 
+-the 'delete marker' button still doesn't work. I click it, it turns red and the cursor changes... but then when I click on an electrode marker in the brainviewers or an electrode button, and nothing appears to happen. fix. 
+-the white text in the 'Controls' panel is hard to read because of the light grey background. make hte bacground for that text black. 
+-change the window title to 'Mark ECoG on CT'
+.....
+new addition: the change i want to make to it is to add something to the outputted electrodes coordinate script: I want it to output the location of the m`anually marked in mm in native space, in addition to the voxel coordinate which i currently outputs. (add 3 more columns to hte output table for x y z for this.) if this is possible using just the .nii ct volume which was already provided, use that. let me know if more information will need to be inputted to the script in order to compute location in mm 
