@@ -96,19 +96,6 @@ function [resp, trials] = get_epoched_responses(D_in, trials, op)
             end
         end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
     end
 
     %% initalize response computation
