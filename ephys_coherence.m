@@ -75,9 +75,9 @@ master_pair_tables = cell(nsubjects, 1);
 for isub = 1:nsubjects
     % Determine subject identifier label
     if ismember('sub', subs.Properties.VariableNames)
-        sub_name = subs.sub{isub};
+        sub_name = char(string(subs.sub{isub}));
     elseif ismember('name', subs.Properties.VariableNames)
-        sub_name = subs.name{isub};
+        sub_name = char(string(subs.name{isub}));
     else
         sub_name = sprintf('sub-%02d', isub);
     end
@@ -90,20 +90,21 @@ for isub = 1:nsubjects
     paths = subs.paths{isub};
     
     %% --- 2A. Load FieldTrip Continuous Data Structure ---
-    if ~exist(paths.fieldtrip, 'file')
-        error('ephys_coherence:FileNotFound', 'Fieldtrip file not found: %s', paths.fieldtrip);
+    ft_path = unwrap_val(paths.fieldtrip);
+    if ~exist(ft_path, 'file')
+        error('ephys_coherence:FileNotFound', 'Fieldtrip file not found: %s', ft_path);
     end
     
-    ft_file_info = whos('-file', paths.fieldtrip);
+    ft_file_info = whos('-file', ft_path);
     ft_var_names = {ft_file_info.name};
     
     if ~ismember(op.fieldtrip_var_name, ft_var_names)
         error('ephys_coherence:VarNotFound', ...
             'Expected variable ''%s'' in file ''%s'', but found variables: %s', ...
-            op.fieldtrip_var_name, paths.fieldtrip, strjoin(ft_var_names, ', '));
+            op.fieldtrip_var_name, ft_path, strjoin(ft_var_names, ', '));
     end
     
-    loaded_ft = load(paths.fieldtrip, op.fieldtrip_var_name);
+    loaded_ft = load(ft_path, op.fieldtrip_var_name);
     D = loaded_ft.(op.fieldtrip_var_name);
     
     % Extract sampling frequency and time vector
@@ -118,7 +119,8 @@ for isub = 1:nsubjects
     if istable(paths.electrodes)
         electrodes = paths.electrodes;
     else
-        electrodes = readtable(paths.electrodes, 'FileType', 'text', 'Delimiter', '\t');
+        elec_path = unwrap_val(paths.electrodes);
+        electrodes = readtable(elec_path, 'FileType', 'text', 'Delimiter', '\t');
     end
     
     % Define anatomical brain regions using define_brain_regions
@@ -155,8 +157,9 @@ for isub = 1:nsubjects
         end
         
         for iart = 1:length(art_files)
-            if exist(art_files{iart}, 'file')
-                curr_art = readtable(art_files{iart}, 'FileType', 'text', 'Delimiter', '\t');
+            a_file = unwrap_val(art_files{iart});
+            if exist(a_file, 'file')
+                curr_art = readtable(a_file, 'FileType', 'text', 'Delimiter', '\t');
                 artifact_master = [artifact_master; curr_art]; %#ok<AGROW>
             end
         end
@@ -167,7 +170,8 @@ for isub = 1:nsubjects
         if istable(paths.trials)
             trials_tbl = paths.trials;
         else
-            trials_tbl = readtable(paths.trials, 'FileType', 'text', 'Delimiter', '\t');
+            tr_path = unwrap_val(paths.trials);
+            trials_tbl = readtable(tr_path, 'FileType', 'text', 'Delimiter', '\t');
         end
     elseif ismember('trials', subs.Properties.VariableNames) && ~isempty(subs.trials{isub})
         if istable(subs.trials{isub})
@@ -183,40 +187,43 @@ for isub = 1:nsubjects
     
     %% --- 2E. Load Channel Response ('resp') Table ---
     resp_tbl = table();
+    raw_resp = [];
     if isfield(paths, 'resp') && ~isempty(paths.resp)
-        if istable(paths.resp)
-            resp_tbl = paths.resp;
-        elseif ischar(paths.resp) || isstring(paths.resp)
-            resp_path = char(paths.resp);
-            if exist(resp_path, 'file')
-                [~, ~, ext] = fileparts(resp_path);
-                if strcmpi(ext, '.mat')
-                    resp_data = load(resp_path);
-                    if isfield(resp_data, 'resp')
-                        resp_tbl = resp_data.resp;
-                    else
-                        fnames = fieldnames(resp_data);
-                        if ~isempty(fnames)
-                            resp_tbl = resp_data.(fnames{1});
-                        end
-                    end
-                elseif strcmpi(ext, '.tsv') || strcmpi(ext, '.txt') || strcmpi(ext, '.csv')
-                    resp_tbl = readtable(resp_path, 'FileType', 'text');
-                end
-            end
-        end
+        raw_resp = paths.resp;
     elseif ismember('resp', subs.Properties.VariableNames) && ~isempty(subs.resp{isub})
-        if istable(subs.resp{isub})
-            resp_tbl = subs.resp{isub};
-        elseif ischar(subs.resp{isub}) || isstring(subs.resp{isub})
-            resp_path = char(subs.resp{isub});
-            if exist(resp_path, 'file')
+        raw_resp = subs.resp{isub};
+    end
+    
+    raw_resp = unwrap_val(raw_resp);
+    
+    if istable(raw_resp)
+        resp_tbl = raw_resp;
+    elseif ischar(raw_resp) || isstring(raw_resp)
+        resp_path = char(raw_resp);
+        if exist(resp_path, 'file')
+            [~, ~, ext] = fileparts(resp_path);
+            if strcmpi(ext, '.mat')
                 resp_data = load(resp_path);
                 if isfield(resp_data, 'resp')
                     resp_tbl = resp_data.resp;
+                else
+                    fnames = fieldnames(resp_data);
+                    if ~isempty(fnames)
+                        resp_tbl = resp_data.(fnames{1});
+                    end
                 end
+            elseif strcmpi(ext, '.tsv') || strcmpi(ext, '.txt') || strcmpi(ext, '.csv')
+                resp_tbl = readtable(resp_path, 'FileType', 'text');
             end
         end
+    end
+    
+    % Validate resp table loading when op.resp_vars_to_copy is specified
+    if ~isempty(op.resp_vars_to_copy) && isempty(resp_tbl)
+        error('ephys_coherence:RespTableNotLoaded', ...
+            ['op.resp_vars_to_copy was specified (%s), but the response table (resp) failed to load for subject %s (index %d). ' ...
+             'Ensure paths.resp or subs.resp{%d} is assigned to a valid table or file path.'], ...
+            strjoin(cellstr(op.resp_vars_to_copy), ', '), sub_name, isub, isub);
     end
     
     %% --- 2F. Select Channels & Construct Inter-Regional Pairs ---
@@ -285,17 +292,18 @@ for isub = 1:nsubjects
     sub_col = cell(npairs, 1);
     [sub_col{:}] = deal(sub_name);
     
-    % Expose chan and region directly as Npairs x 2 string matrices so MATLAB displays values in top-level table view
+    % Expose chan and region directly as Npairs x 2 string matrices
     chan_col = strings(npairs, 2);
     region_col = strings(npairs, 2);
     
-    % n_good_trials stored as Npairs x nconds matrix (trials per condition usable jointly by both electrodes)
+    % n_good_trials stored as Npairs x nconds matrix
     n_good_trials_col = zeros(npairs, nconds);
     
     % Initialize copied resp variables (1 x 2 values per pair)
     resp_copies = struct();
-    for ivar = 1:length(op.resp_vars_to_copy)
-        vname = op.resp_vars_to_copy{ivar};
+    resp_vars = cellstr(op.resp_vars_to_copy);
+    for ivar = 1:length(resp_vars)
+        vname = resp_vars{ivar};
         resp_copies.(vname) = zeros(npairs, 2);
     end
     
@@ -309,18 +317,18 @@ for isub = 1:nsubjects
         elec1_label = '';
         elec2_label = '';
         if isfield(D, 'electrode_label') && length(D.electrode_label) >= idx1
-            elec1_label = D.electrode_label{idx1};
+            elec1_label = unwrap_val(D.electrode_label{idx1});
         end
         if isfield(D, 'electrode_label') && length(D.electrode_label) >= idx2
-            elec2_label = D.electrode_label{idx2};
+            elec2_label = unwrap_val(D.electrode_label{idx2});
         end
         
         chan_col(ipair, :) = [string(name1), string(name2)];
         region_col(ipair, :) = [string(chan_regions{idx1}), string(chan_regions{idx2})];
         
         % Copy channel metrics from resp table for channel 1 and channel 2
-        for ivar = 1:length(op.resp_vars_to_copy)
-            vname = op.resp_vars_to_copy{ivar};
+        for ivar = 1:length(resp_vars)
+            vname = resp_vars{ivar};
             val1 = extract_resp_val(resp_tbl, name1, vname, elec1_label);
             val2 = extract_resp_val(resp_tbl, name2, vname, elec2_label);
             resp_copies.(vname)(ipair, :) = [val1, val2];
@@ -440,7 +448,7 @@ for isub = 1:nsubjects
                     coh_tf_matrix = NaN(nfreqs, ntimes);
                 end
                 
-                % Rownames of freqs table set to exact numerical string representation without f_ and Hz
+                % Rownames of freqs table set to exact numerical string representation
                 freq_rownames = arrayfun(@(f) num2str(f), target_freqs, 'UniformOutput', false);
                 freqs_tbl = table(target_freqs', coh_tf_matrix, ...
                     'VariableNames', {'freq', 'coh'}, ...
@@ -472,8 +480,8 @@ for isub = 1:nsubjects
         'VariableNames', {'sub', 'chan', 'region', 'n_good_trials'});
     
     % Append copied response variables
-    for ivar = 1:length(op.resp_vars_to_copy)
-        vname = op.resp_vars_to_copy{ivar};
+    for ivar = 1:length(resp_vars)
+        vname = resp_vars{ivar};
         sub_pair_tbl.(vname) = resp_copies.(vname);
     end
     
@@ -504,7 +512,6 @@ end
 %% =======================================================================
 
 function val = unwrap_val(val)
-% Unwraps cell elements if nested
 while iscell(val) && numel(val) == 1
     val = val{1};
 end
@@ -570,7 +577,6 @@ function is_clean = is_artifact_free(t_start, t_end, D, idx1, idx2, artifact_tbl
 % Checks if analysis window is free of NaNs and manual artifacts for both channels
 is_clean = false;
 
-% 1. Bounds check relative to continuous data recording
 if t_start < time_vec(1) || t_end > time_vec(end)
     return;
 end
@@ -582,7 +588,6 @@ if isempty(sample_start) || isempty(sample_end) || sample_start >= sample_end
     return;
 end
 
-% 2. Check for NaNs within trial analysis window
 sig1 = D.trial{1}(idx1, sample_start:sample_end);
 sig2 = D.trial{1}(idx2, sample_start:sample_end);
 
@@ -590,7 +595,6 @@ if any(isnan(sig1)) || any(isnan(sig2))
     return;
 end
 
-% 3. Check for artifact overlap in master artifact table
 if ~isempty(artifact_tbl) && ismember('label', artifact_tbl.Properties.VariableNames)
     chan1_name = D.label{idx1};
     chan2_name = D.label{idx2};
@@ -629,7 +633,6 @@ rel_time_vec = t_start_rel:dt:t_end_rel;
 ntimes = length(rel_time_vec);
 ngood = length(good_trials);
 
-% Padded segment lengths
 t_pad_start = t_start_rel - buffer_sec;
 t_pad_end = t_end_rel + buffer_sec;
 rel_pad_time = t_pad_start:dt:t_pad_end;

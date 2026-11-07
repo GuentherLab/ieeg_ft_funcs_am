@@ -23,6 +23,7 @@ function op_out = coherence_plotting(coh, op)
 %           .clim                        : [cmin, cmax] color scale bounds for heatmaps (optional)
 %           .show_heatmap                : Logical (default true); if false, bypasses time-frequency heatmap generation
 %           .show_canon_timecourses      : Logical (default false); if true, plots condition-overlaid timecourses for canonical bands
+%           .single_timecourse_fig       : Logical (default false); if true, combines timecourse plots for all region pairs into a single figure
 %           .canon_bands                 : Cell array of name-range pairs specifying custom frequency bands for timecourses
 %                                          Accepts flat cell arrays, N x 2 cell arrays, or struct arrays.
 %           .smooth_timecourse_width_sec : Scalar (default 0); if > 0, applies moving smoothing over window size in seconds
@@ -54,6 +55,10 @@ end
 
 if ~isfield(op, 'show_canon_timecourses') || isempty(op.show_canon_timecourses)
     op.show_canon_timecourses = false;
+end
+
+if ~isfield(op, 'single_timecourse_fig') || isempty(op.single_timecourse_fig)
+    op.single_timecourse_fig = false;
 end
 
 if ~op.show_heatmap && ~op.show_canon_timecourses
@@ -399,6 +404,28 @@ switch op.norm_method
         unit_label = 'Coherence (Raw)';
 end
 
+% Pre-create single combined figure for timecourses if op.single_timecourse_fig is true
+if op.show_canon_timecourses && op.single_timecourse_fig
+    fig_counter = fig_counter + 1;
+    target_mon_idx = num_monitors - mod(fig_counter - 1, num_monitors);
+    target_pos = monitor_positions(target_mon_idx, :);
+    
+    fig_title_str = 'Canonical Timecourses: All Region Pairs';
+    h_fig_single_tc = figure('Name', fig_title_str, 'Color', 'w', ...
+                             'NumberTitle', 'off', 'Position', target_pos);
+    drawnow;
+    set(h_fig_single_tc, 'WindowState', 'maximized');
+    fig_handles = [fig_handles; h_fig_single_tc];
+    
+    sgtitle(sprintf('Canonical Band Timecourses  |  Sync Event: %s', op.sync_event), ...
+        'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
+    
+    % Default to 3 columns if 3 or more total plots exist across all pairs and bands
+    n_total_tc_plots = npair_types * n_canon_bands;
+    N_cols_tc_single = min(3, n_total_tc_plots);
+    N_rows_tc_single = ceil(n_total_tc_plots / N_cols_tc_single);
+end
+
 %% =======================================================================
 %% 5. PLOTTING BY UNIQUE CANONICAL REGION PAIRS
 %% =======================================================================
@@ -562,23 +589,29 @@ for r = 1:npair_types
     
     % OPTION B: CANONICAL BAND TIMECOURSES OVERLAY
     if op.show_canon_timecourses
-        fig_counter = fig_counter + 1;
-        target_mon_idx = num_monitors - mod(fig_counter - 1, num_monitors);
-        target_pos = monitor_positions(target_mon_idx, :);
-        
-        fig_title_str = sprintf('Canonical Timecourses: %s', reg_pair_label);
-        h_fig_tc = figure('Name', fig_title_str, 'Color', 'w', ...
-                           'NumberTitle', 'off', 'Position', target_pos);
-        drawnow;
-        set(h_fig_tc, 'WindowState', 'maximized');
-        fig_handles = [fig_handles; h_fig_tc];
-        
-        sgtitle(sprintf('Region Pair: %s  |  Sync Event: %s  (N = %d pairs)', ...
-            reg_pair_label, op.sync_event, n_matching), ...
-            'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
-        
-        N_cols_tc = 3;
-        N_rows_tc = ceil(n_canon_bands / N_cols_tc);
+        if op.single_timecourse_fig
+            figure(h_fig_single_tc);
+            N_cols_tc = N_cols_tc_single;
+            N_rows_tc = N_rows_tc_single;
+        else
+            fig_counter = fig_counter + 1;
+            target_mon_idx = num_monitors - mod(fig_counter - 1, num_monitors);
+            target_pos = monitor_positions(target_mon_idx, :);
+            
+            fig_title_str = sprintf('Canonical Timecourses: %s', reg_pair_label);
+            h_fig_tc = figure('Name', fig_title_str, 'Color', 'w', ...
+                               'NumberTitle', 'off', 'Position', target_pos);
+            drawnow;
+            set(h_fig_tc, 'WindowState', 'maximized');
+            fig_handles = [fig_handles; h_fig_tc];
+            
+            sgtitle(sprintf('Region Pair: %s  |  Sync Event: %s  (N = %d pairs)', ...
+                reg_pair_label, op.sync_event, n_matching), ...
+                'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
+            
+            N_cols_tc = min(3, n_canon_bands);
+            N_rows_tc = ceil(n_canon_bands / N_cols_tc);
+        end
         
         cond_labels = cell(nconds, 1);
         for c = 1:nconds
@@ -598,8 +631,15 @@ for r = 1:npair_types
             b_fmin = canon_bands(b).fmin;
             b_fmax = canon_bands(b).fmax;
             
-            subplot(N_rows_tc, N_cols_tc, b);
-            curr_row = ceil(b / N_cols_tc);
+            if op.single_timecourse_fig
+                sub_idx = (r - 1) * n_canon_bands + b;
+                subplot(N_rows_tc, N_cols_tc, sub_idx);
+                curr_row = ceil(sub_idx / N_cols_tc);
+            else
+                subplot(N_rows_tc, N_cols_tc, b);
+                curr_row = ceil(b / N_cols_tc);
+            end
+            
             hold on;
             
             band_freq_mask = (freq_vec >= b_fmin) & (freq_vec <= b_fmax);
@@ -656,8 +696,13 @@ for r = 1:npair_types
             ylabel_str = sprintf('Coherence [%s, %g-%g Hz]', b_name, b_fmin, b_fmax);
             ylabel(ylabel_str, 'FontSize', 10, 'FontWeight', 'bold');
             
-            title(sprintf('%s (%g - %g Hz)', b_name, b_fmin, b_fmax), ...
-                'FontSize', 12, 'FontWeight', 'bold');
+            if op.single_timecourse_fig
+                title(sprintf('%s | %s (%g - %g Hz)', reg_pair_label, b_name, b_fmin, b_fmax), ...
+                    'FontSize', 11, 'FontWeight', 'bold', 'Interpreter', 'none');
+            else
+                title(sprintf('%s (%g - %g Hz)', b_name, b_fmin, b_fmax), ...
+                    'FontSize', 12, 'FontWeight', 'bold');
+            end
             
             if curr_row == N_rows_tc
                 xlabel(sprintf('Time after %s (s)', op.sync_event), 'FontSize', 11, 'Interpreter', 'none');
