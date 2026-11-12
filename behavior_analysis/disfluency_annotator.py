@@ -1291,6 +1291,39 @@ class MainWindow(QtWidgets.QMainWindow):
             self.commit_edit()
         fn()
 
+    def _apply_spectro_stretch(self):
+        """Applies the correct layout stretches based on maximized and pop-out states."""
+        if self.spectro_maximized:
+            # MAXIMIZED: Steal space from other pyqtgraph timelines
+            self.glw.ci.layout.setRowStretchFactor(0, 200) # Spectrogram gets massive stretch
+            self.glw.ci.layout.setRowStretchFactor(1, 10)  # wave
+            self.glw.ci.layout.setRowStretchFactor(2, 10)  # trans
+            self.glw.ci.layout.setRowStretchFactor(3, 10)  # de
+            self.glw.ci.layout.setRowStretchFactor(4, 10)  # notes
+            
+            # If the video is docked (top layout exists), shrink the top panels heavily
+            if self.pop is None:
+                self.left_layout.setStretchFactor(self.top, 5) 
+        else:
+            # MINIMIZED: Restore original baseline stretches
+            self.glw.ci.layout.setRowStretchFactor(0, 50)
+            self.glw.ci.layout.setRowStretchFactor(1, 25)
+            self.glw.ci.layout.setRowStretchFactor(2, 18)
+            self.glw.ci.layout.setRowStretchFactor(3, 28)
+            self.glw.ci.layout.setRowStretchFactor(4, 22)
+            
+            # If video is docked, restore the normal top panel stretch
+            if self.pop is None:
+                self.left_layout.setStretchFactor(self.top, 40)
+
+        self._apply_spectro_stretch()
+
+    def toggle_spectro(self):
+        """Toggles the spectrogram between minimized and maximized states."""
+        self.spectro_maximized = not self.spectro_maximized
+        self.btn_spec_toggle.setText("min" if self.spectro_maximized else "max")
+        self._apply_spectro_stretch()
+
     def _build_ui(self):
         self.setWindowTitle(APPNAME)
         scr = QtWidgets.QApplication.primaryScreen().availableGeometry()
@@ -1300,18 +1333,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(cw)
         outer = QtWidgets.QHBoxLayout(cw)
         outer.setContentsMargins(8, 8, 8, 4)
-        left = QtWidgets.QVBoxLayout()
+        self.left_layout = QtWidgets.QVBoxLayout()
+        left = self.left_layout
         right = QtWidgets.QVBoxLayout()
         outer.addLayout(left, 78)
         outer.addLayout(right, 22)
 
-        # ---- top row: annotation panel + IPA | video ----
-        top = QtWidgets.QHBoxLayout()
-        left.addLayout(top, 40)
-        annCol = QtWidgets.QVBoxLayout()
-        top.addLayout(annCol, 30)
-        gb = QtWidgets.QGroupBox('Selected annotation')
-        gv = QtWidgets.QVBoxLayout(gb)
+       # ---- top row: annotation panel + IPA | video ----
+        self.top = QtWidgets.QHBoxLayout()
+        left.addLayout(self.top, 40)
+        self.annCol = QtWidgets.QVBoxLayout()
+        self.top.addLayout(self.annCol, 30)
+        
+        # Store for pop-out swapping
+        self.ann_groupbox = QtWidgets.QGroupBox('Selected annotation')
+        gv = QtWidgets.QVBoxLayout(self.ann_groupbox)
         self.annot = QtWidgets.QPlainTextEdit()
         self.annot.setReadOnly(True)
         self.annot.setFocusPolicy(Qt.NoFocus)
@@ -1320,9 +1356,12 @@ class MainWindow(QtWidgets.QMainWindow):
         f.setPointSize(11)
         self.annot.setFont(f)
         gv.addWidget(self.annot)
-        annCol.addWidget(gb, 1)
-        ipa = QtWidgets.QGridLayout()
-        ipa.setSpacing(2)
+        self.annCol.addWidget(self.ann_groupbox, 1)
+        
+        # Create a container for IPA so it can be moved
+        self.ipa_container = QtWidgets.QWidget()
+        self.ipa = QtWidgets.QGridLayout(self.ipa_container)
+        self.ipa.setSpacing(2)
         for r, syms in enumerate(IPA_ROWS):
             for c, sym in enumerate(syms):
                 b = QtWidgets.QPushButton(sym)
@@ -1333,11 +1372,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 fb.setPointSize(13)
                 b.setFont(fb)
                 b.clicked.connect(lambda _=False, s=sym: self.cb(lambda: self.insert_symbol(s)))
-                ipa.addWidget(b, r, c)
-        annCol.addLayout(ipa)
+                self.ipa.addWidget(b, r, c)
+        self.annCol.addWidget(self.ipa_container)
 
+        # Video Layout
         self.vid_col = QtWidgets.QVBoxLayout()
-        top.addLayout(self.vid_col, 62)
+        self.top.addLayout(self.vid_col, 62)
         vbar = QtWidgets.QHBoxLayout()
         vbar.addStretch()
         self.btn_pop = self._btn('Pop out video', self.toggle_pop,
@@ -1357,8 +1397,29 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dock_msg.hide()
         self.vid_col.addWidget(self.dock_msg, 1)
 
-        # ---- timeline ----
+      # ---- timeline ----
         self.glw = pg.GraphicsLayoutWidget()
+        
+        # Add a floating toggle button to the top-left of the graphics layout.
+        # Parenting it to self.glw prevents it from taking up any vertical layout space.
+        self.btn_spec_toggle = QtWidgets.QPushButton("max", self.glw)
+        self.btn_spec_toggle.setFixedSize(32, 18)
+        self.btn_spec_toggle.setStyleSheet("""
+            QPushButton { 
+                font-size: 10px; 
+                font-weight: bold; 
+                background: #f0f0f0; 
+                border: 1px solid #999;
+                border-radius: 2px;
+            }
+            QPushButton:hover { background: #e0e0e0; }
+        """)
+        # Position it right above the 'Freq (Hz)' label
+        self.btn_spec_toggle.move(8, 8)  
+        self.btn_spec_toggle.clicked.connect(self.toggle_spectro)
+        
+        self.spectro_maximized = False
+     
         self.glw.setBackground(qc(BG))
         self.glw.setFocusPolicy(Qt.StrongFocus)
         left.addWidget(self.glw, 46)
@@ -3785,10 +3846,61 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_status('Video rotated (remembered for this file).')
 
     def toggle_pop(self):
-        if self.pop is not None:
-            self.dock_video()
+        if self.pop is None:
+            # Popping Out
+            self.pop = QtWidgets.QWidget()
+            self.pop.setWindowTitle('Video - %s' % APPNAME)
+            self.pop.resize(800, 600)
+            pv = QtWidgets.QVBoxLayout(self.pop)
+            pv.setContentsMargins(0, 0, 0, 0)
+            
+            # Transfer video widget
+            pv.addWidget(self.video, 1)
+            
+            # Handle close event to dock it back
+            self.pop.closeEvent = lambda e: self.cb(self.toggle_pop)
+            
+            # Adjust main UI layout for popped-out state
+            self.dock_msg.show()
+            self.btn_pop.setText('Dock video')
+            
+            # Move IPA buttons to where the video was (right of the Annotation Info panel)
+            self.annCol.removeWidget(self.ipa_container)
+            self.top.insertWidget(1, self.ipa_container, 30) 
+            
+            # Force the top row to collapse by constraining the maximum heights of all top widgets.
+            # This forces PyQt to give all the freed-up vertical space to the spectrogram below.
+            fm = self.annot.fontMetrics()
+            compact_height = fm.height() * 3 + 15
+            
+            self.annot.setMaximumHeight(compact_height)
+            self.annot.parentWidget().setMaximumHeight(compact_height + 30) # Shrink the QGroupBox
+            self.ipa_container.setMaximumHeight(compact_height + 30)
+            self.dock_msg.setMaximumHeight(compact_height + 30)
+            
+            self.pop.show()
         else:
-            self.pop_out_video()
+            # Docking In
+            self.pop.closeEvent = lambda e: e.accept()
+            self.pop.hide()
+            self.pop.deleteLater()
+            self.pop = None
+            
+            # Transfer video widget back
+            self.vid_col.insertWidget(1, self.video, 1)
+            self.dock_msg.hide()
+            self.btn_pop.setText('Pop out video')
+            
+            # Restore main UI layout
+            self.top.removeWidget(self.ipa_container)
+            self.annCol.addWidget(self.ipa_container)
+            
+            # Remove height constraints so the top section can expand to fit the video again
+            MAX_H = 16777215 # PyQt's default maximum widget size
+            self.annot.setMaximumHeight(MAX_H)
+            self.annot.parentWidget().setMaximumHeight(MAX_H)
+            self.ipa_container.setMaximumHeight(MAX_H)
+            self.dock_msg.setMaximumHeight(MAX_H)
 
     def pop_out_video(self):
         if not self.loaded:
@@ -3965,22 +4077,77 @@ class MainWindow(QtWidgets.QMainWindow):
         return C
 
     def export_cells(self):
-        C = [['start', 'end', 'duration', 'fluent_event_id', 'fluent_event', 'event_code', 'notes']]
+        # 1. Set the new column headers
+        C = [['starts_file_relative', 'ends_file_relative', 'duration', 'fluent_event_id', 
+              'transcript', 'type', 'error_type', 'preceding_disfluency', 'notes']]
         E = self.events
         r3 = lambda x: round(x * 1000) / 1000
+        
+        # Helper to map codes to file names
+        def map_code(event, is_res=False):
+            if is_res: return 'disfluency_resolution'
+            if event.kind == 'fluent': return 'fluent'
+            if event.kind == 'error': return 'error'
+            
+            c = event.cat.lower()
+            if c == 'rep': return 'sld_repetition'
+            if c == 'td': return 'typical_disfluency'
+            if c == 'bl': return 'block'
+            if c == 'prol': return 'prolongation'
+            return event.cat
+            
+        def map_error_type(event):
+            if event.kind != 'error': return ''
+            c = event.cat.lower()
+            if c == 'er-os': return 'omitted_sound'
+            if c == 'er-ow': return 'omitted_word'
+            if c == 'er-is': return 'inserted_sound'
+            if c == 'er-iw': return 'inserted_word'
+            if c == 'er-t': return 'transposition'
+            if c == 'er-s': return 'substitution'
+            return 'error'
+
+        data_rows = []
+        
+        # 2. Extract fluents and their connected disfluencies
         fl = sorted([i for i, e in enumerate(E) if e.kind == 'fluent'], key=lambda i: E[i].start)
         for n, f in enumerate(fl, 1):
-            C.append([r3(E[f].start), r3(E[f].end), r3(E[f].end - E[f].start), n, E[f].transcript, 'F',
-                      self.fluent_notes(f)])
-            for j in sorted(self.linked_all(E[f].uid), key=lambda i: E[i].start):
-                C.append([r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), n, E[f].transcript,
-                          self.event_code(j), E[j].notes])
+            connected = sorted(self.linked_all(E[f].uid), key=lambda i: E[i].start)
+            is_resolution = len(connected) > 0
+            
+            # Find the most recent preceding disfluency type if this is a resolution
+            prec_disf = ''
+            if is_resolution:
+                # The most recent connected disfluency
+                last_disf = connected[-1]
+                prec_disf = map_code(E[last_disf])
+
+            # Fluent event (or resolution)
+            data_rows.append([
+                r3(E[f].start), r3(E[f].end), r3(E[f].end - E[f].start), n, 
+                E[f].transcript, map_code(E[f], is_resolution), '', prec_disf, self.fluent_notes(f)
+            ])
+            
+            # Connected disfluencies/errors
+            for j in connected:
+                data_rows.append([
+                    r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), n, 
+                    E[f].transcript, map_code(E[j]), map_error_type(E[j]), '', E[j].notes
+                ])
+                
+        # 3. Extract unlinked/orphan disfluencies
         orph = sorted([i for i, e in enumerate(E) if e.kind in ('disfl', 'error')
                        and (e.link <= 0 or self.find_uid(e.link) is None)], key=lambda i: E[i].start)
         for j in orph:
-            C.append([r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), '', '(unresolved)',
-                      self.event_code(j), E[j].notes])
-        return C
+            data_rows.append([
+                r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), '', 
+                '(unresolved)', map_code(E[j]), map_error_type(E[j]), '', E[j].notes
+            ])
+            
+        # 4. Sort rows entirely by starts_file_relative (index 0)
+        data_rows.sort(key=lambda row: row[0])
+        
+        return C + data_rows
 
     def save_annotations(self):
         if not self.loaded:
@@ -4089,21 +4256,38 @@ class MainWindow(QtWidgets.QMainWindow):
         if len(C) < 2:
             QtWidgets.QMessageBox.warning(self, 'Nothing to load', '"%s" has no annotation rows.' % fn)
             return None
+            
         hdrN = [re.sub(r'[^a-z0-9]', '', to_str(h).lower()) for h in C[0]]
         col = lambda nm: hdrN.index(nm) + 1 if nm in hdrN else 0
-        cS, cE = col('startaudiofilerelative'), col('stopaudiofilerelative')
-        cTyp, cTr, cWi, cId = col('eventtype'), col('transcript'), col('wordindex'), col('fluenteventid')
-        cD, cEr, cN, cGS, cGE, cOld = col('disfluency'), col('error'), col('notes'), col('start'), col('stop'), 0
+        
+        # 1. Map to the new schema (underscores are stripped out by the regex above)
+        cS, cE = col('startsfilerelative'), col('endsfilerelative')
+        cTyp, cTr, cId = col('type'), col('transcript'), col('fluenteventid')
+        cEr, cN, cPD = col('errortype'), col('notes'), col('precedingdisfluency')
+        
+        # Initialize legacy variables as 0 so the rest of the function doesn't throw a NameError
+        cWi, cD, cGS, cGE, cOld = 0, 0, 0, 0, 0 
+        
         if cS and cE:
-            fmt = 'typed' if cTyp else 'v3'
+            fmt = 'v4'
         else:
-            cS, cE, cOld, cTyp, cGS, cGE, fmt = col('starts'), col('ends'), col('eventtype'), 0, 0, 0, 'v2'
+            # 2. Legacy fallback mapping
+            cS, cE = col('startaudiofilerelative'), col('stopaudiofilerelative')
+            if not cS:
+                cS, cE = col('starts'), col('ends')
+                
             if not cS or not cE:
+                # 3. Updated error message for the GUI
                 QtWidgets.QMessageBox.warning(self, 'Invalid file',
                                               'This file does not look like an annotation file.\n\nExpected columns: '
-                                              'start-audiofile-relative, stop-audiofile-relative, event-type, '
-                                              'transcript, fluent-event-id, disfluency, error, notes.')
+                                              'starts_file_relative, ends_file_relative, duration, '
+                                              'fluent_event_id, transcript, type, error_type, '
+                                              'preceding_disfluency, notes.')
                 return None
+                
+            cTyp, cTr, cWi, cId = col('eventtype'), col('transcript'), col('wordindex'), col('fluenteventid')
+            cD, cEr, cN, cGS, cGE, cOld = col('disfluency'), col('error'), col('notes'), col('start'), col('stop'), 0
+            fmt = 'legacy'
 
         def cell(row, c):
             return row[c - 1] if c and c - 1 < len(row) else ''
