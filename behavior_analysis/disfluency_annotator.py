@@ -132,10 +132,7 @@ class Ev:
     notes: str = ''
     uid: int = 0
     link: int = 0          # uid of the fluent word a disfl / error resolves to
-    wi: int = 0            # word index (older files)
     tok: int = 0           # uid of the transcript piece the event sits on
-    gStart: float = NAN
-    gStop: float = NAN
 
 
 def fmt_time(t):
@@ -1849,11 +1846,6 @@ class MainWindow(QtWidgets.QMainWindow):
         for j in self.attached_to(k):
             self.events[j].start = self.events[k].start
             self.events[j].end = self.events[k].end
-            self.clear_global(j)
-
-    def clear_global(self, k):
-        self.events[k].gStart = NAN
-        self.events[k].gStop = NAN
 
     def link_for(self, k):
         fl = [i for i, e in enumerate(self.events) if e.kind == 'fluent']
@@ -2811,14 +2803,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sel_s = max(lo, min(t, self.sel_e - MINSEL))
             if self.cur is not None:
                 E[self.cur].start = self.sel_s
-                self.clear_global(self.cur)
                 if E[self.cur].kind == 'trans':
                     self.sync_tok(self.cur)
                 else:
                     E[self.cur].tok = 0
                 if d.nbr is not None:
                     E[d.nbr].end = self.sel_s
-                    self.clear_global(d.nbr)
                     self.sync_tok(d.nbr)
                 self.redraw_events()
         elif d.mode == 'right':
@@ -2826,14 +2816,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sel_e = min(hi, max(t, self.sel_s + MINSEL))
             if self.cur is not None:
                 E[self.cur].end = self.sel_e
-                self.clear_global(self.cur)
                 if E[self.cur].kind == 'trans':
                     self.sync_tok(self.cur)
                 else:
                     E[self.cur].tok = 0
                 if d.nbr is not None:
                     E[d.nbr].start = self.sel_e
-                    self.clear_global(d.nbr)
                     self.sync_tok(d.nbr)
                 self.redraw_events()
         elif d.mode == 'move':
@@ -2851,12 +2839,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sel_s, self.sel_e = a, b
             k = d.move_idx
             E[k].start, E[k].end = a, b
-            self.clear_global(k)
             if E[k].kind != 'trans':
                 E[k].tok = 0
             for j, (s0, e0) in zip(d.kids, d.kids_orig):
                 E[j].start, E[j].end = s0 + dd, e0 + dd
-                self.clear_global(j)
             self.redraw_events()
         else:
             self.sel_s, self.sel_e = min(d.t0, t), max(d.t0, t)
@@ -4035,119 +4021,99 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_status(msg, 'ok')
 
     # ======================= save / load ======================================
-    def build_save_cells(self):
-        hdr = ['start', 'stop', 'start-audiofile-relative', 'stop-audiofile-relative', 'event-type',
-               'transcript', 'fluent-event-id', 'disfluency', 'error', 'notes']
-        if not self.events:
-            return [hdr]
-        ev = sorted(self.events, key=lambda e: e.start)
-        keep = []
-        for e in ev:
-            if e.kind == 'trans' and any(f.kind == 'fluent' and f.tok == e.uid and abs(f.start - e.start) < 1e-3
-                                         and abs(f.end - e.end) < 1e-3 for f in ev):
-                continue
-            keep.append(e)
-        fuids = [e.uid for e in keep if e.kind == 'fluent']
-        C = [hdr]
-        for e in keep:
-            tr, fid, dc, ec = '', '', '', ''
-            if e.kind == 'trans':
-                ty, tr = 'transcript', e.transcript
-            elif e.kind == 'fluent':
-                ty, tr, fid = 'fluent', e.transcript, fuids.index(e.uid) + 1
-            elif e.kind == 'disfl':
-                ty, dc = 'disfluency', e.cat
-                if DISFL_HAS_TRANSCRIPT:
-                    tr = e.transcript
-            else:
-                ty, ec = 'error', e.cat
-            if e.kind in ('disfl', 'error') and e.link > 0 and e.link in fuids:
-                fid = fuids.index(e.link) + 1
-            C.append(['' if isnan(e.gStart) else e.gStart, '' if isnan(e.gStop) else e.gStop,
-                      e.start, e.end, ty, tr, fid, dc, ec, e.notes])
-        return C
+        def code_table(self):
+            C = [
+                ['code', 'label', 'meaning', 'group'],
+                ['F', 'fluent', 'fluent-accurate word', 'fluent'],
+                ['F', 'disfluency_resolution', 'fluent-accurate word (resolution)', 'fluent'],
+            ]
+            for d in DISFL:
+                grp = 'typical disfluency (TD)' if d['abbr'] == 'td' else 'stuttering-like disfluency (SLD)'
+                label = {
+                    'rep': 'sld_repetition',
+                    'td': 'typical_disfluency',
+                    'bl': 'block',
+                    'prol': 'prolongation',
+                }.get(d['abbr'], d['abbr'])
+                C.append([d['key'].upper(), label, d['name'], grp])
+            for e in ERRS:
+                C.append(['E-' + re.sub(r'^er-', '', e['abbr']).upper(), e['abbr'], e['name'], 'error'])
+            return C
 
-    def code_table(self):
-        C = [['code', 'label', 'meaning', 'group'], ['F', 'fluent', 'fluent-accurate word (resolution)', 'fluent']]
-        for d in DISFL:
-            grp = 'typical disfluency (TD)' if d['abbr'] == 'td' else 'stuttering-like disfluency (SLD)'
-            C.append([d['key'].upper(), d['abbr'], d['name'], grp])
-        for e in ERRS:
-            C.append(['E-' + re.sub(r'^er-', '', e['abbr']).upper(), e['abbr'], e['name'], 'error'])
-        return C
+        def export_cells(self):
+            C = [['starts_file_relative', 'ends_file_relative', 'duration', 'fluent_event_id',
+                'transcript', 'type', 'error_type', 'preceding_disfluency', 'notes']]
+            E = self.events
+            r3 = lambda x: round(x * 1000) / 1000
 
-    def export_cells(self):
-        # 1. Set the new column headers
-        C = [['starts_file_relative', 'ends_file_relative', 'duration', 'fluent_event_id', 
-              'transcript', 'type', 'error_type', 'preceding_disfluency', 'notes']]
-        E = self.events
-        r3 = lambda x: round(x * 1000) / 1000
-        
-        # Helper to map codes to file names
-        def map_code(event, is_res=False):
-            if is_res: return 'disfluency_resolution'
-            if event.kind == 'fluent': return 'fluent'
-            if event.kind == 'error': return 'error'
-            
-            c = event.cat.lower()
-            if c == 'rep': return 'sld_repetition'
-            if c == 'td': return 'typical_disfluency'
-            if c == 'bl': return 'block'
-            if c == 'prol': return 'prolongation'
-            return event.cat
-            
-        def map_error_type(event):
-            if event.kind != 'error': return ''
-            c = event.cat.lower()
-            if c == 'er-os': return 'omitted_sound'
-            if c == 'er-ow': return 'omitted_word'
-            if c == 'er-is': return 'inserted_sound'
-            if c == 'er-iw': return 'inserted_word'
-            if c == 'er-t': return 'transposition'
-            if c == 'er-s': return 'substitution'
-            return 'error'
+            def map_code(event, is_res=False):
+                if is_res:
+                    return 'disfluency_resolution'
+                if event.kind == 'fluent':
+                    return 'fluent'
+                if event.kind == 'error':
+                    return 'error'
+                return {
+                    'rep': 'sld_repetition',
+                    'td': 'typical_disfluency',
+                    'bl': 'block',
+                    'prol': 'prolongation',
+                }.get(event.cat.lower(), event.cat)
 
-        data_rows = []
-        
-        # 2. Extract fluents and their connected disfluencies
-        fl = sorted([i for i, e in enumerate(E) if e.kind == 'fluent'], key=lambda i: E[i].start)
-        for n, f in enumerate(fl, 1):
-            connected = sorted(self.linked_all(E[f].uid), key=lambda i: E[i].start)
-            is_resolution = len(connected) > 0
-            
-            # Find the most recent preceding disfluency type if this is a resolution
-            prec_disf = ''
-            if is_resolution:
-                # The most recent connected disfluency
-                last_disf = connected[-1]
-                prec_disf = map_code(E[last_disf])
+            def map_error_type(event):
+                if event.kind != 'error':
+                    return ''
+                return {
+                    'er-os': 'omitted_sound',
+                    'er-ow': 'omitted_word',
+                    'er-is': 'inserted_sound',
+                    'er-iw': 'inserted_word',
+                    'er-t': 'transposition',
+                    'er-s': 'substitution',
+                }.get(event.cat.lower(), 'error')
 
-            # Fluent event (or resolution)
-            data_rows.append([
-                r3(E[f].start), r3(E[f].end), r3(E[f].end - E[f].start), n, 
-                E[f].transcript, map_code(E[f], is_resolution), '', prec_disf, self.fluent_notes(f)
-            ])
-            
-            # Connected disfluencies/errors
-            for j in connected:
+            data_rows = []
+
+            # 1. Extract fluents (including resolutions) and their connected disfluencies
+            fl = sorted([i for i, e in enumerate(E) if e.kind == 'fluent'], key=lambda i: E[i].start)
+            for n, f in enumerate(fl, 1):
+                connected = sorted(self.linked_all(E[f].uid), key=lambda i: E[i].start)
+                is_resolution = len(connected) > 0
+                prec_disf = map_code(E[connected[-1]]) if is_resolution else ''
+
                 data_rows.append([
-                    r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), n, 
-                    E[f].transcript, map_code(E[j]), map_error_type(E[j]), '', E[j].notes
+                    r3(E[f].start), r3(E[f].end), r3(E[f].end - E[f].start), n,
+                    E[f].transcript, map_code(E[f], is_resolution), '', prec_disf, self.fluent_notes(f)
                 ])
-                
-        # 3. Extract unlinked/orphan disfluencies
-        orph = sorted([i for i, e in enumerate(E) if e.kind in ('disfl', 'error')
-                       and (e.link <= 0 or self.find_uid(e.link) is None)], key=lambda i: E[i].start)
-        for j in orph:
-            data_rows.append([
-                r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), '', 
-                '(unresolved)', map_code(E[j]), map_error_type(E[j]), '', E[j].notes
-            ])
-            
-        # 4. Sort rows entirely by starts_file_relative (index 0)
-        data_rows.sort(key=lambda row: row[0])
-        
-        return C + data_rows
+
+                for j in connected:
+                    data_rows.append([
+                        r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), n,
+                        E[f].transcript, map_code(E[j]), map_error_type(E[j]), '', E[j].notes
+                    ])
+
+            # 2. Extract unlinked/orphan disfluencies and errors
+            orph = sorted([i for i, e in enumerate(E) if e.kind in ('disfl', 'error')
+                        and (e.link <= 0 or self.find_uid(e.link) is None)], key=lambda i: E[i].start)
+            for j in orph:
+                data_rows.append([
+                    r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), '',
+                    '(unresolved)', map_code(E[j]), map_error_type(E[j]), '', E[j].notes
+                ])
+
+            # 3. Extract standalone transcript segments that don't overlap a fluent word
+            fl_spans = [(E[f].start, E[f].end) for f in fl]
+            trs = sorted([i for i, e in enumerate(E) if e.kind == 'trans'], key=lambda i: E[i].start)
+            for t in trs:
+                if any(abs(E[t].start - a) < 1e-3 and abs(E[t].end - b) < 1e-3 for a, b in fl_spans):
+                    continue
+                data_rows.append([
+                    r3(E[t].start), r3(E[t].end), r3(E[t].end - E[t].start), '',
+                    E[t].transcript, 'transcript', '', '', E[t].notes
+                ])
+
+            data_rows.sort(key=lambda row: row[0])
+            return C + data_rows
 
     def save_annotations(self):
         if not self.loaded:
@@ -4161,11 +4127,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 return False
         d, base = os.path.split(self.video_path)
         default = os.path.join(d, os.path.splitext(base)[0] + '_annot-disfluencies.xlsx')
-        out, flt = QtWidgets.QFileDialog.getSaveFileName(self, 'Save annotations', default,
-                                                         'Excel workbook (*.xlsx);;CSV files (*.csv)')
+        out, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save annotations', default,
+                                                       'Excel workbook (*.xlsx);;CSV files (*.csv)')
         if not out:
             return False
-        E, K, A = self.export_cells(), self.code_table(), self.build_save_cells()
+        E, K = self.export_cells(), self.code_table()
         csv_mode = out.lower().endswith('.csv')
         if not csv_mode and not out.lower().endswith('.xlsx'):
             out += '.xlsx'
@@ -4174,9 +4140,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 ob = os.path.splitext(out)[0]
                 write_csv(out, E)
                 write_csv(ob + '_codes.csv', K)
-                write_csv(ob + '_annotator.csv', A)
             else:
-                write_xlsx(out, [('events', E), ('codes', K), ('annotator_data', A)])
+                write_xlsx(out, [('events', E), ('codes', K)])
         except Exception as err:
             QtWidgets.QMessageBox.critical(self, 'Save error', 'Could not save the annotations:\n\n%s\n\nIf the '
                                            'file is open in Excel, close it and try again.' % err)
@@ -4188,6 +4153,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_status('Saved %d fluent event(s) and %d disfluency / error event(s) to %s'
                         % (nF, nD, os.path.basename(out)), 'ok')
         return True
+
 
     def load_annotations(self):
         if not self.loaded:
@@ -4256,41 +4222,39 @@ class MainWindow(QtWidgets.QMainWindow):
         if len(C) < 2:
             QtWidgets.QMessageBox.warning(self, 'Nothing to load', '"%s" has no annotation rows.' % fn)
             return None
-            
+
         hdrN = [re.sub(r'[^a-z0-9]', '', to_str(h).lower()) for h in C[0]]
         col = lambda nm: hdrN.index(nm) + 1 if nm in hdrN else 0
-        
-        # 1. Map to the new schema (underscores are stripped out by the regex above)
+
         cS, cE = col('startsfilerelative'), col('endsfilerelative')
         cTyp, cTr, cId = col('type'), col('transcript'), col('fluenteventid')
-        cEr, cN, cPD = col('errortype'), col('notes'), col('precedingdisfluency')
-        
-        # Initialize legacy variables as 0 so the rest of the function doesn't throw a NameError
-        cWi, cD, cGS, cGE, cOld = 0, 0, 0, 0, 0 
-        
-        if cS and cE:
-            fmt = 'v4'
-        else:
-            # 2. Legacy fallback mapping
-            cS, cE = col('startaudiofilerelative'), col('stopaudiofilerelative')
-            if not cS:
-                cS, cE = col('starts'), col('ends')
-                
-            if not cS or not cE:
-                # 3. Updated error message for the GUI
-                QtWidgets.QMessageBox.warning(self, 'Invalid file',
-                                              'This file does not look like an annotation file.\n\nExpected columns: '
-                                              'starts_file_relative, ends_file_relative, duration, '
-                                              'fluent_event_id, transcript, type, error_type, '
-                                              'preceding_disfluency, notes.')
-                return None
-                
-            cTyp, cTr, cWi, cId = col('eventtype'), col('transcript'), col('wordindex'), col('fluenteventid')
-            cD, cEr, cN, cGS, cGE, cOld = col('disfluency'), col('error'), col('notes'), col('start'), col('stop'), 0
-            fmt = 'legacy'
+        cEr, cN = col('errortype'), col('notes')
+
+        if not cS or not cE or not cTyp:
+            QtWidgets.QMessageBox.warning(self, 'Invalid file',
+                                          'This file does not look like an annotation file.\n\nExpected columns: '
+                                          'starts_file_relative, ends_file_relative, duration, '
+                                          'fluent_event_id, transcript, type, error_type, '
+                                          'preceding_disfluency, notes.')
+            return None
 
         def cell(row, c):
             return row[c - 1] if c and c - 1 < len(row) else ''
+
+        disfl_map = {
+            'sld_repetition': 'rep',
+            'typical_disfluency': 'td',
+            'block': 'bl',
+            'prolongation': 'prol',
+        }
+        err_map = {
+            'omitted_sound': 'er-os',
+            'omitted_word': 'er-ow',
+            'inserted_sound': 'er-is',
+            'inserted_word': 'er-iw',
+            'transposition': 'er-t',
+            'substitution': 'er-s',
+        }
 
         R = []
         n_bad = n_out = 0
@@ -4305,84 +4269,82 @@ class MainWindow(QtWidgets.QMainWindow):
             if st >= self.dur:
                 n_out += 1
                 continue
-            dc, ec = to_str(cell(row, cD)).lower(), to_str(cell(row, cEr)).lower()
-            if fmt == 'typed':
-                typ = to_str(cell(row, cTyp)).lower()
-            elif fmt == 'v3':
-                typ = 'both' if (dc and ec) else ('disfluency' if dc else ('error' if ec else 'fluent'))
-            else:
+
+            raw_typ = to_str(cell(row, cTyp)).lower()
+            ec = to_str(cell(row, cEr)).lower()
+            tr_val = to_str(cell(row, cTr))
+            dc = ''
+
+            if raw_typ in ('fluent', 'disfluency_resolution'):
+                typ = 'fluent'
+            elif raw_typ == 'error':
+                typ = 'error'
+                ec = err_map.get(ec, ec)
+                tr_val = ''
+            elif raw_typ in disfl_map or raw_typ in [d['abbr'] for d in DISFL]:
                 typ = 'disfluency'
-                old = to_str(cell(row, cOld)).lower()
-                if old == 'repetition':
-                    dc = 'rep'
-                elif old == 'block':
-                    dc = 'bl'
-                elif old == 'prolongation':
-                    dc = 'prol'
-                elif old in ('text-only', ''):
-                    typ = 'transcript'
-                else:
-                    dc = old
-            R.append(SimpleNamespace(row=i + 1, st=st, en=min(en, self.dur), typ=typ, tr=to_str(cell(row, cTr)),
-                                     fid=to_num(cell(row, cId)), wi=to_num(cell(row, cWi)), dc=dc, ec=ec,
-                                     nt=to_str(cell(row, cN)), gs=to_num(cell(row, cGS)), ge=to_num(cell(row, cGE))))
+                dc = disfl_map.get(raw_typ, raw_typ)
+                if not DISFL_HAS_TRANSCRIPT:
+                    tr_val = ''
+            elif raw_typ == 'transcript':
+                typ = 'transcript'
+            else:
+                typ = raw_typ
+
+            R.append(SimpleNamespace(
+                row=i + 1, st=st, en=min(en, self.dur), typ=typ, tr=tr_val,
+                fid=to_num(cell(row, cId)), dc=dc, ec=ec, nt=to_str(cell(row, cN))
+            ))
+
         if not R:
             QtWidgets.QMessageBox.warning(self, 'Nothing to load', 'No usable rows were found in "%s".' % fn)
             return None
 
         rows = lambda mask: ', '.join(str(r.row) for r, m in zip(R, mask) if m)[:200]
-        is_di = [r.typ in ('disfluency', 'both') for r in R]
-        is_er = [r.typ in ('error', 'both') for r in R]
+        is_di = [r.typ == 'disfluency' for r in R]
+        is_er = [r.typ == 'error' for r in R]
         is_fl = [r.typ == 'fluent' for r in R]
         is_tx = [r.typ == 'transcript' for r in R]
-        is_tg = [r.typ == 'target' for r in R]
         has_tr = [bool(r.tr) for r in R]
+
         issues = []
         if n_bad:
             issues.append('- %d row(s) with missing or invalid times were skipped.' % n_bad)
         if n_out:
             issues.append('- %d row(s) start after the end of this video and were skipped.' % n_out)
-        if fmt == 'v2':
-            issues.append('- Old layout (starts / ends / event_type): text-only rows load as transcript, the rest as '
-                          'unresolved disfluencies.')
         if any(R[i + 1].st < R[i].st for i in range(len(R) - 1)):
-            issues.append('- Rows are not sorted by start-audiofile-relative.')
-        if fmt == 'typed':
-            b = [r.typ not in ('transcript', 'fluent', 'disfluency', 'error', 'target') for r in R]
-            if any(b):
-                issues.append('- Unknown event-type (rows %s); skipped.' % rows(b))
-            b = [(t or f) and (r.dc or r.ec) for r, t, f in zip(R, is_tx, is_fl)]
-            if any(b):
-                issues.append('- Transcript / fluent rows have a disfluency / error label (rows %s) - ignored.' % rows(b))
-        b = [e and not d and h for e, d, h in zip(is_er, is_di, has_tr)]
-        if any(b):
-            issues.append('- Error rows have a transcript (rows %s) - it will be dropped.' % rows(b))
-        if not DISFL_HAS_TRANSCRIPT:
-            b = [d and h for d, h in zip(is_di, has_tr)]
-            if any(b):
-                issues.append('- Disfluency rows have a transcript (rows %s).' % rows(b))
-        b = [d and r.dc not in [x['abbr'] for x in DISFL] for r, d in zip(R, is_di)]
-        if any(b):
-            issues.append('- Unknown disfluency labels (rows %s).' % rows(b))
-        b = [e and r.ec not in [x['abbr'] for x in ERRS] for r, e in zip(R, is_er)]
-        if any(b):
-            issues.append('- Unknown error labels (rows %s).' % rows(b))
-        b = [f and not h for f, h in zip(is_fl, has_tr)]
-        if any(b):
-            issues.append('- Fluent rows with no word (rows %s).' % rows(b))
+            issues.append('- Rows are not sorted by starts_file_relative.')
+
+        bad_typ = [r.typ not in ('transcript', 'fluent', 'disfluency', 'error') for r in R]
+        if any(bad_typ):
+            issues.append('- Unknown type values (rows %s); skipped.' % rows(bad_typ))
+
+        bad_di = [d and r.dc not in [x['abbr'] for x in DISFL] for r, d in zip(R, is_di)]
+        if any(bad_di):
+            issues.append('- Unknown disfluency labels (rows %s).' % rows(bad_di))
+
+        bad_er = [e and r.ec not in [x['abbr'] for x in ERRS] for r, e in zip(R, is_er)]
+        if any(bad_er):
+            issues.append('- Unknown error_type labels (rows %s).' % rows(bad_er))
+
+        bad_fl = [f and not h for f, h in zip(is_fl, has_tr)]
+        if any(bad_fl):
+            issues.append('- Fluent / resolution rows with no transcript word (rows %s).' % rows(bad_fl))
+
         fl_ids = [r.fid for r, f in zip(R, is_fl) if f]
-        if fmt in ('typed', 'v3'):
-            if any(isnan(v) for v in fl_ids):
-                issues.append('- Fluent rows without a fluent-event-id.')
-            v = [x for x in fl_ids if not isnan(x)]
-            if len(set(v)) < len(v):
-                issues.append('- Fluent-event-ids are repeated across fluent rows.')
-            elif v != list(range(1, len(fl_ids) + 1)):
-                issues.append('- Fluent-event-ids are not sequential integers from 1 (renumbered on save).')
-            b = [(d or e) and not isnan(r.fid) and r.fid not in fl_ids for r, d, e in zip(R, is_di, is_er)]
-            if any(b):
-                issues.append('- Disfluency / error rows point to a missing fluent-event-id (rows %s) - loaded '
-                              'unresolved.' % rows(b))
+        if any(isnan(v) for v in fl_ids):
+            issues.append('- Fluent / resolution rows without a fluent_event_id.')
+        valid_ids = [x for x in fl_ids if not isnan(x)]
+        if len(set(valid_ids)) < len(valid_ids):
+            issues.append('- fluent_event_id values are repeated across fluent rows.')
+        elif valid_ids != list(range(1, len(fl_ids) + 1)):
+            issues.append('- fluent_event_id values are not sequential integers starting at 1 (renumbered on save).')
+
+        bad_link = [(d or e) and not isnan(r.fid) and r.fid not in fl_ids for r, d, e in zip(R, is_di, is_er)]
+        if any(bad_link):
+            issues.append('- Disfluency / error rows point to a missing fluent_event_id (rows %s) - loaded '
+                          'unresolved.' % rows(bad_link))
+
         if issues:
             r = QtWidgets.QMessageBox.question(self, 'Annotation file check', 'Checks found problems in "%s":\n\n%s'
                                                '\n\nLoad it anyway?' % (fn, '\n'.join(issues)))
@@ -4393,7 +4355,7 @@ class MainWindow(QtWidgets.QMainWindow):
         new = []
 
         def mk(rr, kind, cat, tr, link):
-            e = Ev(rr.st, rr.en, kind, cat, tr, rr.nt, self.next_uid, link, 0, 0, rr.gs, rr.ge)
+            e = Ev(rr.st, rr.en, kind, cat, tr, rr.nt, self.next_uid, link, 0)
             self.next_uid += 1
             new.append(e)
             return e
@@ -4402,9 +4364,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for r, t in zip(R, is_tx):
             if t:
                 mk(r, 'trans', '', r.tr, 0)
-        for r, t in zip(R, is_tg):
-            if t and not any(a < r.en and b > r.st for a, b in tx_spans):
-                mk(r, 'trans', '', r.tr, 0)
+
         id_map = {}
         for r, f in zip(R, is_fl):
             if not f:
@@ -4412,17 +4372,18 @@ class MainWindow(QtWidgets.QMainWindow):
             if not any(a <= r.st + 1e-6 and b >= r.en - 1e-6 for a, b in tx_spans):
                 mk(r, 'trans', '', r.tr, 0)
             e = mk(r, 'fluent', '', norm_word_keep(r.tr), 0)
-            e.wi = self._pick_word_idx(new, e, r.wi)
             if not isnan(r.fid) and r.fid not in id_map:
                 id_map[r.fid] = e.uid
+
         for r, d, er in zip(R, is_di, is_er):
             if not (d or er):
                 continue
-            lk = id_map.get(r.fid, 0) if (fmt != 'v2' and not isnan(r.fid)) else 0
+            lk = id_map.get(r.fid, 0) if not isnan(r.fid) else 0
             if d:
                 mk(r, 'disfl', r.dc, r.tr if DISFL_HAS_TRANSCRIPT else '', lk)
             if er:
                 mk(r, 'error', r.ec, '', lk)
+
         trs = [e for e in new if e.kind == 'trans']
         for e in new:
             if e.kind == 'trans':
@@ -4430,23 +4391,8 @@ class MainWindow(QtWidgets.QMainWindow):
             m = next((t for t in trs if abs(t.start - e.start) < 1e-3 and abs(t.end - e.end) < 1e-3), None)
             if m is not None:
                 e.tok = m.uid
-        return new, len(new)
 
-    def _pick_word_idx(self, new, fe, given):
-        sk = next((e for e in new if e.kind == 'trans' and e.start <= fe.start + 1e-6 and e.end >= fe.end - 1e-6),
-                  None)
-        if sk is None:
-            return 0
-        toks = [norm_word(t) for t in sk.transcript.split()]
-        w = norm_word(fe.transcript)
-        if not isnan(given) and 1 <= given <= len(toks) and toks[int(given) - 1] == w:
-            return int(given)
-        taken = {g.wi for g in new if g.kind == 'fluent' and g is not fe and g.start >= sk.start - 1e-6
-                 and g.end <= sk.end + 1e-6}
-        for i, t in enumerate(toks, 1):
-            if t == w and i not in taken:
-                return i
-        return 0
+        return new, len(new)
 
     def compare_to_current(self, new_ev):
         dup, uid = [], []
@@ -4678,18 +4624,15 @@ def _read_csv(f):
 
 
 def read_saved_table(f):
-    """Reopen: the annotator_data sheet (new files) or the old layouts."""
-    d, b = os.path.split(f)
-    stem, ext = os.path.splitext(b)
+    """Read the events sheet from an .xlsx file or directly from a .csv file."""
+    _, ext = os.path.splitext(f)
     ext = ext.lower()
     if ext == '.csv':
-        stem = re.sub(r'_(annotator|codes)$', '', stem)
-        alt = os.path.join(d, stem + '_annotator.csv')
-        return _read_csv(alt if os.path.exists(alt) else f)
+        return _read_csv(f)
     if ext in ('.xlsx', '.xlsm'):
         from openpyxl import load_workbook
         wb = load_workbook(f, read_only=True, data_only=True)
-        ws = wb['annotator_data'] if 'annotator_data' in wb.sheetnames else wb.worksheets[0]
+        ws = wb['events'] if 'events' in wb.sheetnames else wb.worksheets[0]
         rows = [['' if v is None else v for v in r] for r in ws.iter_rows(values_only=True)]
         wb.close()
         return rows
