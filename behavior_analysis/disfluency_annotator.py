@@ -4021,99 +4021,99 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_status(msg, 'ok')
 
     # ======================= save / load ======================================
-        def code_table(self):
-            C = [
-                ['code', 'label', 'meaning', 'group'],
-                ['F', 'fluent', 'fluent-accurate word', 'fluent'],
-                ['F', 'disfluency_resolution', 'fluent-accurate word (resolution)', 'fluent'],
-            ]
-            for d in DISFL:
-                grp = 'typical disfluency (TD)' if d['abbr'] == 'td' else 'stuttering-like disfluency (SLD)'
-                label = {
-                    'rep': 'sld_repetition',
-                    'td': 'typical_disfluency',
-                    'bl': 'block',
-                    'prol': 'prolongation',
-                }.get(d['abbr'], d['abbr'])
-                C.append([d['key'].upper(), label, d['name'], grp])
-            for e in ERRS:
-                C.append(['E-' + re.sub(r'^er-', '', e['abbr']).upper(), e['abbr'], e['name'], 'error'])
-            return C
+    def code_table(self):
+        C = [
+            ['code', 'label', 'meaning', 'group'],
+            ['F', 'fluent', 'fluent-accurate word', 'fluent'],
+            ['F', 'disfluency_resolution', 'fluent-accurate word (resolution)', 'fluent'],
+        ]
+        for d in DISFL:
+            grp = 'typical disfluency (TD)' if d['abbr'] == 'td' else 'stuttering-like disfluency (SLD)'
+            label = {
+                'rep': 'sld_repetition',
+                'td': 'typical_disfluency',
+                'bl': 'block',
+                'prol': 'prolongation',
+            }.get(d['abbr'], d['abbr'])
+            C.append([d['key'].upper(), label, d['name'], grp])
+        for e in ERRS:
+            C.append(['E-' + re.sub(r'^er-', '', e['abbr']).upper(), e['abbr'], e['name'], 'error'])
+        return C
 
-        def export_cells(self):
-            C = [['starts_file_relative', 'ends_file_relative', 'duration', 'fluent_event_id',
-                'transcript', 'type', 'error_type', 'preceding_disfluency', 'notes']]
-            E = self.events
-            r3 = lambda x: round(x * 1000) / 1000
+    def export_cells(self):
+        C = [['starts_file_relative', 'ends_file_relative', 'duration', 'fluent_event_id',
+              'transcript', 'type', 'error_type', 'preceding_disfluency', 'notes']]
+        E = self.events
+        r3 = lambda x: round(x * 1000) / 1000
 
-            def map_code(event, is_res=False):
-                if is_res:
-                    return 'disfluency_resolution'
-                if event.kind == 'fluent':
-                    return 'fluent'
-                if event.kind == 'error':
-                    return 'error'
-                return {
-                    'rep': 'sld_repetition',
-                    'td': 'typical_disfluency',
-                    'bl': 'block',
-                    'prol': 'prolongation',
-                }.get(event.cat.lower(), event.cat)
+        def map_code(event, is_res=False):
+            if is_res:
+                return 'disfluency_resolution'
+            if event.kind == 'fluent':
+                return 'fluent'
+            if event.kind == 'error':
+                return 'error'
+            return {
+                'rep': 'sld_repetition',
+                'td': 'typical_disfluency',
+                'bl': 'block',
+                'prol': 'prolongation',
+            }.get(event.cat.lower(), event.cat)
 
-            def map_error_type(event):
-                if event.kind != 'error':
-                    return ''
-                return {
-                    'er-os': 'omitted_sound',
-                    'er-ow': 'omitted_word',
-                    'er-is': 'inserted_sound',
-                    'er-iw': 'inserted_word',
-                    'er-t': 'transposition',
-                    'er-s': 'substitution',
-                }.get(event.cat.lower(), 'error')
+        def map_error_type(event):
+            if event.kind != 'error':
+                return ''
+            return {
+                'er-os': 'omitted_sound',
+                'er-ow': 'omitted_word',
+                'er-is': 'inserted_sound',
+                'er-iw': 'inserted_word',
+                'er-t': 'transposition',
+                'er-s': 'substitution',
+            }.get(event.cat.lower(), 'error')
 
-            data_rows = []
+        data_rows = []
 
-            # 1. Extract fluents (including resolutions) and their connected disfluencies
-            fl = sorted([i for i, e in enumerate(E) if e.kind == 'fluent'], key=lambda i: E[i].start)
-            for n, f in enumerate(fl, 1):
-                connected = sorted(self.linked_all(E[f].uid), key=lambda i: E[i].start)
-                is_resolution = len(connected) > 0
-                prec_disf = map_code(E[connected[-1]]) if is_resolution else ''
+        # 1. Extract fluents (including resolutions) and their connected disfluencies
+        fl = sorted([i for i, e in enumerate(E) if e.kind == 'fluent'], key=lambda i: E[i].start)
+        for n, f in enumerate(fl, 1):
+            connected = sorted(self.linked_all(E[f].uid), key=lambda i: E[i].start)
+            is_resolution = len(connected) > 0
+            prec_disf = map_code(E[connected[-1]]) if is_resolution else ''
 
+            data_rows.append([
+                r3(E[f].start), r3(E[f].end), r3(E[f].end - E[f].start), n,
+                E[f].transcript, map_code(E[f], is_resolution), '', prec_disf, self.fluent_notes(f)
+            ])
+
+            for j in connected:
                 data_rows.append([
-                    r3(E[f].start), r3(E[f].end), r3(E[f].end - E[f].start), n,
-                    E[f].transcript, map_code(E[f], is_resolution), '', prec_disf, self.fluent_notes(f)
+                    r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), n,
+                    E[f].transcript, map_code(E[j]), map_error_type(E[j]), '', E[j].notes
                 ])
 
-                for j in connected:
-                    data_rows.append([
-                        r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), n,
-                        E[f].transcript, map_code(E[j]), map_error_type(E[j]), '', E[j].notes
-                    ])
+        # 2. Extract unlinked/orphan disfluencies and errors
+        orph = sorted([i for i, e in enumerate(E) if e.kind in ('disfl', 'error')
+                       and (e.link <= 0 or self.find_uid(e.link) is None)], key=lambda i: E[i].start)
+        for j in orph:
+            data_rows.append([
+                r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), '',
+                '(unresolved)', map_code(E[j]), map_error_type(E[j]), '', E[j].notes
+            ])
 
-            # 2. Extract unlinked/orphan disfluencies and errors
-            orph = sorted([i for i, e in enumerate(E) if e.kind in ('disfl', 'error')
-                        and (e.link <= 0 or self.find_uid(e.link) is None)], key=lambda i: E[i].start)
-            for j in orph:
-                data_rows.append([
-                    r3(E[j].start), r3(E[j].end), r3(E[j].end - E[j].start), '',
-                    '(unresolved)', map_code(E[j]), map_error_type(E[j]), '', E[j].notes
-                ])
+        # 3. Extract standalone transcript segments that don't overlap a fluent word
+        fl_spans = [(E[f].start, E[f].end) for f in fl]
+        trs = sorted([i for i, e in enumerate(E) if e.kind == 'trans'], key=lambda i: E[i].start)
+        for t in trs:
+            if any(abs(E[t].start - a) < 1e-3 and abs(E[t].end - b) < 1e-3 for a, b in fl_spans):
+                continue
+            data_rows.append([
+                r3(E[t].start), r3(E[t].end), r3(E[t].end - E[t].start), '',
+                E[t].transcript, 'transcript', '', '', E[t].notes
+            ])
 
-            # 3. Extract standalone transcript segments that don't overlap a fluent word
-            fl_spans = [(E[f].start, E[f].end) for f in fl]
-            trs = sorted([i for i, e in enumerate(E) if e.kind == 'trans'], key=lambda i: E[i].start)
-            for t in trs:
-                if any(abs(E[t].start - a) < 1e-3 and abs(E[t].end - b) < 1e-3 for a, b in fl_spans):
-                    continue
-                data_rows.append([
-                    r3(E[t].start), r3(E[t].end), r3(E[t].end - E[t].start), '',
-                    E[t].transcript, 'transcript', '', '', E[t].notes
-                ])
-
-            data_rows.sort(key=lambda row: row[0])
-            return C + data_rows
+        data_rows.sort(key=lambda row: row[0])
+        return C + data_rows
 
     def save_annotations(self):
         if not self.loaded:
