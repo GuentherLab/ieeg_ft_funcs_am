@@ -22,17 +22,25 @@ function [sync_out, op_out] = sync_audio_and_annot(sync_in, op)
 %                                 recording time blocks. Each group must have
 %                                 exactly 1 row with master == 1.
 %   op.include_criteria         : (default: {}) Cell array of even length
-%                                 {'col1','val1','col2','val2',...} specifying
-%                                 which moving rows to include. Empty = all.
+%                                 {'col1',val1,'col2',val2,...} specifying
+%                                 which moving rows to include. Each val can
+%                                 be a single value OR a cell/string/numeric
+%                                 array of multiple allowed values for that
+%                                 column (e.g., {'step',{'Z001','C001'}}).
+%                                 Empty = include all moving rows.
 %   op.exclude_criteria         : (default: {}) Cell array of even length
-%                                 {'col1','val1',...} specifying moving rows
-%                                 to exclude (takes precedence over include).
+%                                 {'col1',val1,...} specifying moving rows
+%                                 to exclude (supports single or multi-value
+%                                 cells like {'step',{'Z001','C001'}}; takes
+%                                 precedence over include_criteria).
 %
 %   --- Paths & Output Naming ---
-%   op.sync_table_savename      : (default: '') Output path (.tsv or .xlsx)
-%                                 for synced table. If empty, appends '_sync'
-%                                 to sync_in filename, or saves to
-%                                 ./sync_<timestamp>.xlsx if sync_in is a table.
+%   op.sync_table_savename      : (default: '') Output path (.xlsx) for the
+%                                 synced table. Always saved as .xlsx (any
+%                                 .tsv/other extension is replaced with .xlsx).
+%                                 If empty, appends '_sync.xlsx' to sync_in
+%                                 filename, or saves to ./sync_<timestamp>.xlsx
+%                                 if sync_in is a table variable.
 %   op.annot_dir                : (default: {}) Char/string path or cell array
 %                                 of paths where annotation files live. Also
 %                                 searches one level down in 'unsynced/'. If
@@ -99,9 +107,11 @@ function [sync_out, op_out] = sync_audio_and_annot(sync_in, op)
 %                                 sync_in was passed as a table variable).
 %
 % OUTPUTS:
-%   sync_out : Updated sync table containing 'warpfactor', 'offset', and QC
-%              metric columns ('sync_status', 'r_median', 'clock_drift_ppm',
-%              'landmark_err_t1_ms', 'landmark_err_t2_ms').
+%   sync_out : Updated sync table with 'starts', 'ends', 'duration' (in sec in
+%              master time, inserted immediately after the last grouping
+%              column for synced files and their masters) plus 'warpfactor',
+%              'offset', and QC metric columns ('sync_status', 'r_median',
+%              'clock_drift_ppm', 'landmark_err_t1_ms', 'landmark_err_t2_ms').
 %   op_out   : Options struct populated with all defaults used.
 
 %% 1. Parse Options & Load Sync Table
@@ -113,15 +123,8 @@ op_out = parse_and_validate_options(op, sync_tbl, sync_source_dir, sync_source_f
 
 n_rows = height(sync_tbl);
 
-% Initialize output columns on sync_out
-sync_out = sync_tbl;
-sync_out.warpfactor         = nan(n_rows, 1);
-sync_out.offset             = nan(n_rows, 1);
-sync_out.sync_status        = repmat({'unprocessed'}, n_rows, 1);
-sync_out.r_median           = nan(n_rows, 1);
-sync_out.clock_drift_ppm    = nan(n_rows, 1);
-sync_out.landmark_err_t1_ms = nan(n_rows, 1);
-sync_out.landmark_err_t2_ms = nan(n_rows, 1);
+% Build sync_out with 'starts', 'ends', 'duration' immediately after the last grouping column
+sync_out = initialize_output_table(sync_tbl, op_out.grouping_columns);
 
 % Extract master flag and landmark columns safely
 master_col = get_numeric_col(sync_tbl, 'master');
@@ -174,7 +177,7 @@ for g = 1:n_groups
     master_idx = g_rows(is_master);
     moving_indices = g_rows(~is_master);
 
-    % Set master clock parameters
+    % Set master clock parameters (starts/ends/duration filled only if >=1 moving file syncs)
     sync_out.warpfactor(master_idx)  = 1;
     sync_out.offset(master_idx)      = 0;
     sync_out.sync_status{master_idx} = 'master';
@@ -200,6 +203,7 @@ for g = 1:n_groups
 
     % Lazy-load conditioned master audio only if at least one moving row passes filters
     master_audio_loaded = false;
+    group_has_synced_moving = false;
     y_mas = [];
     mas_dur = NaN;
 
@@ -322,16 +326,25 @@ for g = 1:n_groups
             sync_out.sync_status{m_idx} = 'aligned_auto';
         end
 
-        % Record QC metrics in sync_out (save r_median, clock drift, and endpoint errors even if rejected)
+        % Record QC metrics in sync_out
         sync_out.r_median(m_idx)           = res.r_median;
         sync_out.landmark_err_t1_ms(m_idx) = res.landmark_err_t1_ms;
         sync_out.landmark_err_t2_ms(m_idx) = res.landmark_err_t2_ms;
 
         if align_success
+            group_has_synced_moving = true;
             final_drift_ppm = (final_w - 1) * 1e6;
+
             sync_out.warpfactor(m_idx)      = final_w;
             sync_out.offset(m_idx)          = final_off;
             sync_out.clock_drift_ppm(m_idx) = final_drift_ppm;
+
+            % Master-time bounds for this synced moving recording (sec)
+            mov_start_mas = final_off;
+            mov_end_mas   = final_w * mov_dur + final_off;
+            sync_out.starts(m_idx)   = mov_start_mas;
+            sync_out.ends(m_idx)     = mov_end_mas;
+            sync_out.duration(m_idx) = mov_end_mas - mov_start_mas;
 
             % Display QC metrics in console
             fprintf('  -> SUCCESS (%s): warpfactor=%.8f, offset=%.4f s | r_median=%.3f, drift=%+.1f ppm', ...
@@ -373,19 +386,21 @@ for g = 1:n_groups
                 'reason', fail_reason); %#ok<AGROW>
         end
     end
+
+    % Populate master file starts, ends, duration ONLY if >=1 moving file in this group synced
+    if group_has_synced_moving && master_audio_loaded
+        sync_out.starts(master_idx)   = 0;
+        sync_out.ends(master_idx)     = mas_dur;
+        sync_out.duration(master_idx) = mas_dur;
+    end
 end
 
-%% 3. Save Updated Sync Table & Print End-of-Run Summary
+%% 3. Save Updated Sync Table (Always .xlsx) & Print End-of-Run Summary
 save_dir = fileparts(op_out.sync_table_savename);
 if ~isempty(save_dir) && ~isfolder(save_dir)
     mkdir(save_dir);
 end
-[~, ~, save_ext] = fileparts(op_out.sync_table_savename);
-if strcmpi(save_ext, '.tsv') || strcmpi(save_ext, '.txt')
-    writetable(sync_out, op_out.sync_table_savename, 'FileType', 'text', 'Delimiter', '\t');
-else
-    writetable(sync_out, op_out.sync_table_savename);
-end
+writetable(sync_out, op_out.sync_table_savename);
 
 print_sync_summary(aligned_log, skipped_log, op_out);
 
@@ -395,6 +410,47 @@ end
 %  HELPER FUNCTIONS
 %  ========================================================================
 
+function sync_out = initialize_output_table(sync_tbl, grouping_cols)
+% Insert 'starts', 'ends', 'duration' immediately after the last grouping
+% column, and append warpfactor/offset/QC columns at the end.
+n_rows = height(sync_tbl);
+
+timing_names = {'starts', 'ends', 'duration'};
+extra_names  = {'warpfactor', 'offset', 'sync_status', 'r_median', ...
+                'clock_drift_ppm', 'landmark_err_t1_ms', 'landmark_err_t2_ms'};
+
+% Strip any pre-existing copies of output columns so re-runs stay clean
+drop_existing = intersect(sync_tbl.Properties.VariableNames, [timing_names, extra_names], 'stable');
+base_tbl = sync_tbl;
+if ~isempty(drop_existing)
+    base_tbl(:, drop_existing) = [];
+end
+
+[~, grp_locs] = ismember(grouping_cols, base_tbl.Properties.VariableNames);
+grp_locs = grp_locs(grp_locs > 0);
+if isempty(grp_locs)
+    insert_after = 0;
+else
+    insert_after = max(grp_locs);
+end
+
+timing_tbl = table(nan(n_rows, 1), nan(n_rows, 1), nan(n_rows, 1), ...
+    'VariableNames', timing_names);
+
+extra_tbl = table( ...
+    nan(n_rows, 1), ...
+    nan(n_rows, 1), ...
+    repmat({'unprocessed'}, n_rows, 1), ...
+    nan(n_rows, 1), ...
+    nan(n_rows, 1), ...
+    nan(n_rows, 1), ...
+    nan(n_rows, 1), ...
+    'VariableNames', extra_names);
+
+sync_out = [base_tbl(:, 1:insert_after), timing_tbl, base_tbl(:, insert_after+1:end), extra_tbl];
+end
+
+% -------------------------------------------------------------------------
 function op = parse_and_validate_options(op, sync_tbl, sync_source_dir, sync_source_file)
 % Set default values for all options and validate filter / path arguments.
 
@@ -417,7 +473,7 @@ if ischar(op.grouping_columns) || isstring(op.grouping_columns)
     op.grouping_columns = cellstr(op.grouping_columns);
 end
 
-% Filtering criteria
+% Filtering criteria (preserves nested cell arrays such as {'step', {'Z001','C001'}})
 if ~isfield(op, 'include_criteria'), op.include_criteria = {}; end
 if ~isfield(op, 'exclude_criteria'), op.exclude_criteria = {}; end
 
@@ -448,14 +504,18 @@ elseif ischar(op.annot_dir) || isstring(op.annot_dir)
     op.annot_dir = cellstr(op.annot_dir);
 end
 
+% Output sync table path: ALWAYS force .xlsx extension
 if ~isfield(op, 'sync_table_savename') || isempty(op.sync_table_savename)
     if ~isempty(sync_source_file)
-        [p, n, ext] = fileparts(sync_source_file);
-        op.sync_table_savename = fullfile(p, [n, '_sync', ext]);
+        [p, n, ~] = fileparts(sync_source_file);
+        op.sync_table_savename = fullfile(p, [n, '_sync.xlsx']);
     else
         stamp = datestr(now, 'yyyymmdd_HHMMSS');
         op.sync_table_savename = fullfile(pwd, sprintf('sync_%s.xlsx', stamp));
     end
+else
+    [p, n, ~] = fileparts(char(op.sync_table_savename));
+    op.sync_table_savename = fullfile(p, [n, '.xlsx']);
 end
 
 if ~isfield(op, 'eventwise_audvid_dir'), op.eventwise_audvid_dir = ''; end
@@ -565,9 +625,9 @@ function [keep, reason] = check_criteria_match(tbl, row_idx, inc_crit, exc_crit)
 keep = true;
 reason = '';
 
-% 1. Check include_criteria (AND across distinct columns, OR within repeated columns)
+% 1. Check include_criteria (AND across distinct columns, OR within multi-value cells/repeated columns)
 if ~isempty(inc_crit)
-    inc_cols = inc_crit(1:2:end);
+    inc_cols = cellfun(@(x) char(string(x)), inc_crit(1:2:end), 'UniformOutput', false);
     inc_vals = inc_crit(2:2:end);
     u_cols = unique(inc_cols, 'stable');
     for c = 1:numel(u_cols)
@@ -578,8 +638,12 @@ if ~isempty(inc_crit)
             return;
         end
         row_val = strtrim(get_cell_str_at(tbl, cname, row_idx));
-        allowed = inc_vals(strcmp(inc_cols, cname));
-        matched = any(cellfun(@(v) strcmpi(row_val, strtrim(char(string(v)))), allowed));
+        pair_idxs = find(strcmp(inc_cols, cname));
+        allowed = {};
+        for p = pair_idxs(:)'
+            allowed = [allowed, expand_criterion_values(inc_vals{p})]; %#ok<AGROW>
+        end
+        matched = any(strcmpi(row_val, allowed));
         if ~matched
             keep = false;
             reason = sprintf('Did not match include_criteria (%s = %s)', cname, row_val);
@@ -588,22 +652,42 @@ if ~isempty(inc_crit)
     end
 end
 
-% 2. Check exclude_criteria (takes precedence; any match excludes row)
+% 2. Check exclude_criteria (takes precedence; any match across single or multi-value entries excludes row)
 if ~isempty(exc_crit)
-    exc_cols = exc_crit(1:2:end);
+    exc_cols = cellfun(@(x) char(string(x)), exc_crit(1:2:end), 'UniformOutput', false);
     exc_vals = exc_crit(2:2:end);
     for k = 1:numel(exc_cols)
         cname = exc_cols{k};
         if ismember(cname, tbl.Properties.VariableNames)
             row_val = strtrim(get_cell_str_at(tbl, cname, row_idx));
-            target_val = strtrim(char(string(exc_vals{k})));
-            if strcmpi(row_val, target_val)
+            excluded_list = expand_criterion_values(exc_vals{k});
+            if any(strcmpi(row_val, excluded_list))
                 keep = false;
                 reason = sprintf('Matched exclude_criteria (%s = %s)', cname, row_val);
                 return;
             end
         end
     end
+end
+end
+
+% -------------------------------------------------------------------------
+function vals_out = expand_criterion_values(raw_val)
+% Convert a single scalar or a cell/string/numeric array of criterion values
+% into a flat cell array of trimmed character vectors.
+if iscell(raw_val)
+    vals_out = {};
+    for i = 1:numel(raw_val)
+        vals_out = [vals_out, expand_criterion_values(raw_val{i})]; %#ok<AGROW>
+    end
+elseif isstring(raw_val)
+    vals_out = cellstr(strtrim(raw_val(:)))';
+elseif isnumeric(raw_val) || islogical(raw_val)
+    vals_out = cellstr(strtrim(string(raw_val(:))))';
+elseif ischar(raw_val)
+    vals_out = {strtrim(raw_val)};
+else
+    vals_out = {strtrim(char(string(raw_val)))};
 end
 end
 
@@ -660,7 +744,7 @@ if isfile(full_p_norm)
 end
 
 if ~isempty(base_dir)
-    % 1. Check relative to sync_in directory and up to 4 ancestor levels (e.g., R01-SML_data_shared)
+    % 1. Check relative to sync_in directory and up to 4 ancestor levels
     anc = base_dir;
     for up = 0:4
         if up > 0
@@ -675,7 +759,7 @@ if ~isempty(base_dir)
         end
     end
 
-    % 2. Remap shared dataset root across machines (e.g. C:\Dropbox\R01-SML_data_shared -> local Dropbox path)
+    % 2. Remap shared dataset root across machines
     markers = {'R01-SML_data_shared', 'sourcedata', 'derivatives'};
     for m = 1:numel(markers)
         mk = markers{m};
@@ -691,14 +775,6 @@ if ~isempty(base_dir)
     end
 end
 end
-
-
-
-
-
-
-
-
 
 % -------------------------------------------------------------------------
 function [audio_path, orig_path, ok, reason] = resolve_moving_audio_path(tbl, row_idx, base_dir)
@@ -797,7 +873,6 @@ if exist('butter', 'file') && exist('filtfilt', 'file')
     [b, a] = butter(4, bp / nyq, 'bandpass');
     y_cond = filtfilt(b, a, y_rs);
 else
-    % FFT brick-wall fallback if Signal Processing Toolbox is unavailable
     N = numel(y_rs);
     Y = fft(y_rs);
     freqs = (0:N-1)' * (op.target_fs / N);
@@ -863,14 +938,12 @@ win_n  = round(op.fine_win_sec * fs);
 step_n = round(op.fine_step_sec * fs);
 max_lag_samps = round(search_rad * fs);
 
-% Candidate window centers across moving recording
 half_w = floor(win_n / 2);
 centers_mov = (half_w + 1) : step_n : (n_mov - half_w);
 if numel(centers_mov) < 6 && n_mov > win_n
     centers_mov = round(linspace(half_w + 1, n_mov - half_w, min(12, floor(n_mov / (2*fs)))));
 end
 
-% Energy threshold to skip pure-silence windows
 mov_rms_all = rms(y_mov);
 active_thresh = 0.15 * mov_rms_all;
 
@@ -907,7 +980,6 @@ for k = 1:numel(centers_mov)
         continue;
     end
 
-    % Valid cross-correlation across [-max_lag_samps, +max_lag_samps]
     n_lags = 2 * max_lag_samps + 1;
     r_loc = zeros(n_lags, 1);
     norm_mov = norm(seg_mov);
@@ -1014,8 +1086,6 @@ end
 
 % -------------------------------------------------------------------------
 function [r_norm, lags] = norm_xcorr_fft(x, y)
-% Fast normalized cross-correlation between x (master) and y (moving).
-% Positive lag means y occurs later in x (t_x = t_y + lag).
 nx = numel(x);
 ny = numel(y);
 n_fft = 2^nextpow2(nx + ny - 1);
@@ -1024,15 +1094,12 @@ X = fft(x, n_fft);
 Y = fft(y, n_fft);
 cc = real(ifft(X .* conj(Y)));
 
-% Arrange lags from -(ny-1) to +(nx-1)
 cc_ordered = [cc(end - ny + 2 : end); cc(1 : nx)];
 lags = (-(ny - 1) : (nx - 1))';
 
-% Exact overlapping window norms via cumulative sums
 x2_cs = [0; cumsum(x.^2)];
 y2_cs = [0; cumsum(y.^2)];
 
-k = (1:numel(lags))';
 x_start = max(1, lags + 1);
 x_end   = min(nx, lags + ny);
 y_start = max(1, 1 - lags);
@@ -1069,9 +1136,7 @@ end
 
 % -------------------------------------------------------------------------
 function [w, off, inliers] = irls_linear_fit(x, y, r_weights, tol_sec)
-% Iteratively Reweighted Least Squares fit for y = w * x + off.
 n = numel(x);
-% Initialize using median slope of pairwise anchor points (Theil-Sen style)
 slopes = [];
 for i = 1:n-1
     for j = i+1:n
@@ -1123,7 +1188,6 @@ if is_true_flag(op.show_qc_figs)
 end
 fig = figure('Visible', vis_str, 'Position', [100 100 1150 750], 'Color', 'w');
 
-% Panel 1: Piecewise Clock Drift & Linear Fit
 subplot(2, 2, 1); hold on;
 if ~isempty(res.t_mov_pts)
     lag_ms = (res.t_mas_pts - res.t_mov_pts) * 1000;
@@ -1147,7 +1211,6 @@ title(sprintf('Clock Drift Fit: w=%.7f (%+.1f ppm), off=%.3fs', ...
     res.warpfactor, res.clock_drift_ppm, res.offset));
 grid on;
 
-% Panel 2: Stage 1 Global Envelope Cross-Correlation
 subplot(2, 2, 2);
 plot(res.lags_sec, res.r_global, 'b-'); hold on;
 xline(res.offset, 'r--', 'LineWidth', 1.3);
@@ -1156,7 +1219,6 @@ ylabel('Normalized Envelope r');
 title(sprintf('Macro Envelope XCorr (Z_{peak}=%.1f, r_{med}=%.2f)', res.peak_z, res.r_median));
 grid on;
 
-% Panel 3 & 4: Zoomed 2s Envelope Overlays at Start and End of Overlap
 fs = op.target_fs;
 env_win = round(0.015 * fs);
 e_mas = movmean(abs(y_mas), env_win);
@@ -1212,13 +1274,11 @@ total_clips = 0;
 [~, orig_stem, ~] = fileparts(orig_media_path);
 stems = unique({mov_stem, orig_stem}, 'stable');
 
-% Determine search directories
 search_dirs = op.annot_dir;
 if isempty(search_dirs)
     search_dirs = {mov_dir};
 end
 
-% Build candidate annotation filename stems
 cand_stems = {};
 for s = 1:numel(stems)
     st = stems{s};
@@ -1256,7 +1316,6 @@ for d = 1:numel(search_dirs)
             if listing(f).isdir, continue; end
             [~, f_stem, f_ext] = fileparts(listing(f).name);
             if ~any(strcmpi(f_ext, valid_exts)), continue; end
-            % Skip already-synced files
             if endsWith(f_stem, '_sync', 'IgnoreCase', true), continue; end
 
             if any(strcmpi(f_stem, cand_stems))
@@ -1277,7 +1336,6 @@ for m = 1:numel(matched_files)
     was_in_unsynced = matched_in_unsynced(m);
     [~, orig_f_stem, orig_f_ext] = fileparts(orig_f);
 
-    % Read annotation table
     if strcmpi(orig_f_ext, '.tsv')
         atbl = readtable(orig_f, 'FileType', 'text', 'Delimiter', '\t', 'TextType', 'string');
     else
@@ -1297,7 +1355,6 @@ for m = 1:numel(matched_files)
     ends_mas   = warpfactor * e_rel + offset;
     dur_mas    = ends_mas - starts_mas;
 
-    % Remove old starts, ends, duration, starts_file_relative, ends_file_relative
     drop_cols = intersect(atbl.Properties.VariableNames, ...
         {'starts', 'ends', 'duration', 'starts_file_relative', 'ends_file_relative'}, 'stable');
     other_cols = setdiff(atbl.Properties.VariableNames, drop_cols, 'stable');
@@ -1310,7 +1367,6 @@ for m = 1:numel(matched_files)
     new_atbl.starts_file_relative = s_rel;
     new_atbl.ends_file_relative   = e_rel;
 
-    % Move original file into base_d/unsynced if not already there
     unsync_d = fullfile(base_d, 'unsynced');
     if ~isfolder(unsync_d)
         mkdir(unsync_d);
@@ -1320,7 +1376,6 @@ for m = 1:numel(matched_files)
         movefile(orig_f, dest_unsync);
     end
 
-    % Save synced annotation file one level above 'unsynced' (in base_d)
     synced_f = fullfile(base_d, [orig_f_stem, '_sync', orig_f_ext]);
     if strcmpi(orig_f_ext, '.tsv')
         writetable(new_atbl, synced_f, 'FileType', 'text', 'Delimiter', '\t');
@@ -1329,7 +1384,6 @@ for m = 1:numel(matched_files)
     end
     synced_annot_paths{end+1} = synced_f; %#ok<AGROW>
 
-    % Chop event-wise audio clips if eventwise_audvid_dir is specified
     if ~isempty(op.eventwise_audvid_dir)
         n_c = chop_eventwise_audio(mov_audio_path, s_rel, e_rel, orig_f_stem, op);
         total_clips = total_clips + n_c;
