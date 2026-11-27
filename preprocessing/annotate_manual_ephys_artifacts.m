@@ -1,71 +1,114 @@
 function annotate_manual_ephys_artifacts(cfg)
 %ANNOTATE_MANUAL_EPHYS_ARTIFACTS  Interactive GUI for manual annotation of
-%   intra-operative ephys artifacts in a FieldTrip raw structure.
+%   ephys artifacts in a FieldTrip raw/ref structure.
 %
 % Usage
 %   annotate_manual_ephys_artifacts()
 %   annotate_manual_ephys_artifacts(cfg)
 %
 % cfg fields (all optional)
-%   .sub                         – Subject ID string, e.g. 'DM1005'  (prompted if absent)
-%   .task                        – Task string name, e.g. 'smsl'                ['smsl']
+%   .sub                         – Subject ID string, e.g. 'sap022' (prompted if absent)
+%   .ses                         – Session ID string, e.g. 'stut'   (prompted if absent)
+%   .task                        – Task string name, e.g. 'SpHOC'   ['']
+%   .step                        – Step ID string, e.g. 'B201'      ['']
+%   .ft_path                     – Full path to *_ft-ref.mat / *_ft-raw.mat
 %   .n_chans_raster              – Channels shown per screen in raster view     [40]
 %   .n_chans_timecourse          – Channels shown per screen in timecourse view [20]
 %   .iqr_thr                     – Interquartile range threshold for artifacts  [3]
 %   .max_timecourse_sample_rate  - Target max downsample display rate (Hz)      [200]
 %
-% Input file
-%   Y:\DBS\derivatives\sub-<SUB>\fieldtrip\sub-<SUB>_ses-intraop_task-<TASK>_ft-raw.mat
-%   Must contain a FieldTrip raw struct with fields: trial, time, label.
-%
 % Output .tsv columns
 %   id       – integer row index
-%   starts   – window start  [global time / s]
-%   ends     – window end    [global time / s]
+%   starts   – window start  [master/global time / s]
+%   ends     – window end    [master/global time / s]
 %   duration – ends - starts [s]
 %   label    – channel label matching D.label
 %
 % Requirements: MATLAB R2018b+ (yline, string arrays, datetime arithmetic)
+
 %==========================================================================
 %% 0.  Defaults
 %==========================================================================
 if nargin < 1 || isempty(cfg), cfg = struct(); end
-if ~isfield(cfg,'task'),                        cfg.task                        = 'smsl'; end
-if ~isfield(cfg,'n_chans_raster'),              cfg.n_chans_raster              = 40; end
-if ~isfield(cfg,'n_chans_timecourse'),          cfg.n_chans_timecourse          = 20; end
-if ~isfield(cfg,'iqr_thr'),                     cfg.iqr_thr                     = 3; end
-if ~isfield(cfg,'max_timecourse_sample_rate'),  cfg.max_timecourse_sample_rate  = 200; end
+if ~isfield(cfg,'ses'),                        cfg.ses                        = ''; end
+if ~isfield(cfg,'task'),                       cfg.task                       = ''; end
+if ~isfield(cfg,'step'),                       cfg.step                       = ''; end
+if ~isfield(cfg,'ft_path'),                    cfg.ft_path                    = ''; end
+if ~isfield(cfg,'n_chans_raster'),             cfg.n_chans_raster             = 40; end
+if ~isfield(cfg,'n_chans_timecourse'),         cfg.n_chans_timecourse         = 20; end
+if ~isfield(cfg,'iqr_thr'),                    cfg.iqr_thr                    = 3; end
+if ~isfield(cfg,'max_timecourse_sample_rate'), cfg.max_timecourse_sample_rate = 200; end
 
 %==========================================================================
-%% 1.  Subject ID & Task Dialog
+%% 1.  Subject ID, Session & Task Dialog (if ft_path not provided)
 %==========================================================================
-if ~isfield(cfg,'sub') || isempty(cfg.sub) || ~isfield(cfg,'task') || isempty(cfg.task)
-    prompt = {'Enter subject ID:', 'Enter task:', 'Max Timecourse Sample Rate (Hz):'};
+if isempty(cfg.ft_path) && (~isfield(cfg,'sub') || isempty(cfg.sub) || isempty(cfg.ses))
+    prompt = {'Enter subject ID (e.g. sap022):', ...
+              'Enter session (e.g. stut):', ...
+              'Enter task (optional, e.g. SpHOC):', ...
+              'Enter step (optional, e.g. B201):', ...
+              'Max Timecourse Sample Rate (Hz):'};
     dlgtitle = 'Setup Configuration';
-    dims = [1 35];
-    definput = {'DM10', 'smsl', num2str(cfg.max_timecourse_sample_rate)};
+    dims = [1 40];
+    definput = {'sap022', 'stut', cfg.task, cfg.step, num2str(cfg.max_timecourse_sample_rate)};
     ans_ = inputdlg(prompt, dlgtitle, dims, definput);
     if isempty(ans_), return; end
     cfg.sub  = strtrim(ans_{1});
-    cfg.task = strtrim(ans_{2});
-    cfg.max_timecourse_sample_rate = str2double(strtrim(ans_{3}));
+    cfg.ses  = strtrim(ans_{2});
+    cfg.task = strtrim(ans_{3});
+    cfg.step = strtrim(ans_{4});
+    cfg.max_timecourse_sample_rate = str2double(strtrim(ans_{5}));
 end
+
 %==========================================================================
-%% 2.  Load FieldTrip file
+%% 2.  Resolve Paths & Load FieldTrip file
 %==========================================================================
-ft_dir = fullfile('Y:\DBS', 'derivatives', ['sub-' cfg.sub], 'fieldtrip');
-ft_name = sprintf('sub-%s_ses-intraop_task-%s_ft-raw.mat', cfg.sub, cfg.task);
-ft_path = fullfile(ft_dir, ft_name);
+paths = struct();
+if exist('setpaths_dbs_learn', 'file') == 2 && isfield(cfg, 'sub') && ~isempty(cfg.sub)
+    op_paths = struct('sub', cfg.sub);
+    if ~isempty(cfg.ses), op_paths.ses = cfg.ses; end
+    paths = setpaths_dbs_learn(op_paths);
+end
+
+if isfield(paths, 'fieldtrip')
+    ft_dir = paths.fieldtrip;
+else
+    ft_dir = fullfile('C:\Dropbox\R01-SML_data_shared', 'derivatives', cfg.sub, 'fieldtrip');
+end
+
+if isfield(paths, 'annot')
+    annot_dir = paths.annot;
+else
+    annot_dir = fullfile('C:\Dropbox\R01-SML_data_shared', 'derivatives', cfg.sub, 'annot');
+end
+
+ft_path = char(cfg.ft_path);
+if isempty(ft_path) && ~isempty(cfg.task)
+    step_str = '';
+    if ~isempty(cfg.step)
+        step_str = sprintf('_step-%s', cfg.step);
+    end
+    ft_name = sprintf('sub-%s_ses-%s_task-%s%s_ft-ref.mat', ...
+        cfg.sub, cfg.ses, cfg.task, step_str);
+    ft_path = fullfile(ft_dir, ft_name);
+end
 
 fprintf('\n=== FieldTrip file ===\n');
-fprintf('  Target Path : %s\n', ft_path);
+if ~isempty(ft_path)
+    fprintf('  Target Path : %s\n', ft_path);
+end
 
-% Fallback selector if target file path does not exist
-if ~exist(ft_path, 'file')
-    filter_pattern = sprintf('*task-%s_ft-raw.mat', cfg.task);
+% Fallback selector if target file path does not exist or task/step omitted
+if isempty(ft_path) || ~exist(ft_path, 'file')
+    if ~isempty(cfg.task)
+        filter_pattern = sprintf('*task-%s*_ft-*.mat', cfg.task);
+    else
+        filter_pattern = '*_ft-*.mat';
+    end
     default_search = fullfile(ft_dir, filter_pattern);
     
-    [f, p] = uigetfile({'*.mat', 'FieldTrip Data (*.mat)'}, ...
+    [f, p] = uigetfile({'*_ft-ref.mat;*_ft-raw.mat', 'FieldTrip Data (*.mat)'; ...
+                        '*.mat', 'All MAT files (*.mat)'}, ...
         'Failed to find fieldtrip file; select fieldtrip file', default_search);
     if isequal(f, 0)
         fprintf('Loading cancelled by user.\n');
@@ -89,18 +132,46 @@ t_load1 = datetime('now');
 fprintf('  Load done   : %s  (%.2f s)\n\n', ...
     char(t_load1,'HH:mm:ss.SSS'), seconds(t_load1 - t_load0));
 
-% Identify FieldTrip raw struct
-D = [];
-for fv_ = fieldnames(loaded)'
-    cand_ = loaded.(fv_{1});
-    if isstruct(cand_) && all(isfield(cand_,{'trial','label','time'}))
-        D = cand_; break;
+% Extract BIDS tokens from loaded filename so annot files match exact step/task
+[~, ft_stem, ~] = fileparts(ft_path);
+bids_prefix = regexprep(ft_stem, '_ft-(ref|raw)$', '');
+
+tok_sub  = regexp(ft_stem, 'sub-([^_]+)',  'tokens', 'once');
+tok_ses  = regexp(ft_stem, 'ses-([^_]+)',  'tokens', 'once');
+tok_task = regexp(ft_stem, 'task-([^_]+)', 'tokens', 'once');
+tok_step = regexp(ft_stem, 'step-([^_]+)', 'tokens', 'once');
+if ~isempty(tok_sub),  cfg.sub  = tok_sub{1};  end
+if ~isempty(tok_ses),  cfg.ses  = tok_ses{1};  end
+if ~isempty(tok_task), cfg.task = tok_task{1}; end
+if ~isempty(tok_step), cfg.step = tok_step{1}; end
+
+if exist('setpaths_dbs_learn', 'file') == 2 && ~isempty(cfg.sub)
+    op_tmp = struct('sub', cfg.sub);
+    if ~isempty(cfg.ses), op_tmp.ses = cfg.ses; end
+    p_tmp = setpaths_dbs_learn(op_tmp);
+    if isfield(p_tmp, 'annot'), annot_dir = p_tmp.annot; end
+end
+
+% Identify FieldTrip struct
+if isfield(loaded, 'D') && isstruct(loaded.D) && all(isfield(loaded.D, {'trial','label','time'}))
+    D = loaded.D;
+else
+    D = [];
+    for fv_ = fieldnames(loaded)'
+        cand_ = loaded.(fv_{1});
+        if isstruct(cand_) && all(isfield(cand_,{'trial','label','time'}))
+            D = cand_; break;
+        end
     end
 end
 if isempty(D)
     errordlg('No FieldTrip raw struct (trial/label/time) found in file.', 'Load Error');
     return;
 end
+if ~isfield(D, 'cfg') || ~isstruct(D.cfg)
+    D.cfg = struct();
+end
+
 data_mat  = D.trial{1};         % [nCh x nTime]
 time_vec  = D.time{1};          % [1   x nTime]
 ch_labels = cellstr(D.label);   % {nCh x 1}
@@ -114,15 +185,12 @@ op.max_timecourse_sample_rate = cfg.max_timecourse_sample_rate;
 
 viewmode  = 'timecourse';    % 'raster' | 'timecourse'
 cur_chunk = 1;
-% Custom zoom limits
 custom_xlim = [];
 custom_ylim = [];
-% Trace Scaling values
-raw_scale_val = 1.0;
+raw_scale_val   = 1.0;
 clean_scale_val = 1.0;
 notch_scale_val = 1.0;
 
-% Processed data targets
 data_mat_clean = [];
 data_mat_notch = [];
 
@@ -131,17 +199,53 @@ artifact = table( ...
     zeros(0,1,'double'), zeros(0,1,'double'), ...
     zeros(0,1,'double'), zeros(0,1,'double'), strings(0,1), ...
     'VariableNames',{'id','starts','ends','duration','label'});
-% Current gray selections – struct array
 SEL = struct('t_start',{},'t_end',{},'ch_start',{},'ch_end',{});
-% Rubber-band drag state
 is_dragging = false;
 drag_x0     = NaN;
 drag_y0     = NaN;
-rband_h     = [];   % graphics handle, [] = none
-% Colormaps (15)
+rband_h     = [];
 CMAPS = {'parula','turbo','jet','hsv','hot','cool','spring','summer', ...
          'autumn','winter','gray','bone','copper','pink','colorcube'};
 cur_cmap   = 'parula';
+
+%==========================================================================
+%% 3b. Detect NaNs, Zero-Fill for Filtering, & Auto-Populate NaN Artifacts
+%==========================================================================
+nan_mask = isnan(data_mat);
+D_for_proc = D;
+
+if any(nan_mask, 'all')
+    % Convert contiguous NaN segments per channel into [starts, ends] rows
+    nan_rows = nan_mask_to_artifact_rows(nan_mask, time_vec, ch_labels, D.fsample);
+    
+    % Auto-populate artifact table with detected NaN intervals
+    combine_artifact_tables(nan_rows, false);
+    
+    % Calculate summary statistics (windows, channels, time*channels)
+    n_nan_wins  = height(nan_rows);
+    n_nan_chans = numel(unique(nan_rows.label));
+    dt_smp      = 1 / D.fsample;
+    
+    % Total time*channels across entire recording (s * ch)
+    total_dur_s       = (time_vec(end) - time_vec(1)) + dt_smp;
+    total_time_chans  = total_dur_s * n_chans;
+    nan_time_chans    = sum(nan_rows.duration);
+    pct_time_chans    = 100 * nan_time_chans / max(total_time_chans, eps);
+    
+    fprintf('=== NaN Auto-Artifact Summary ===\n');
+    fprintf('  Detected NaNs in %d window(s) across %d/%d channel(s).\n', ...
+        n_nan_wins, n_nan_chans, n_chans);
+    fprintf('  Marked %.3f s*ch out of %.3f total s*ch (%.2f%%) as artifacts.\n\n', ...
+        nan_time_chans, total_time_chans, pct_time_chans);
+    
+    % Replace NaNs with zeros for downstream HPF/cleaning and notch filtering
+    data_mat_zeroed = data_mat;
+    data_mat_zeroed(nan_mask) = 0;
+    D_for_proc.trial{1} = data_mat_zeroed;
+    
+    % Also replace NaNs with 0 in data_mat so raw trace plotting has no gaps/NaN std
+    data_mat = data_mat_zeroed;
+end
 
 %==========================================================================
 %% 4.  Pre-compute Initial Data & Display Variables
@@ -149,12 +253,18 @@ cur_cmap   = 'parula';
 fprintf('  Running initial data processing...\n');
 cleaning_func_cfg_out = compute_processed_traces(true);
 
+if isempty(cleaning_func_cfg_out) || ~isstruct(cleaning_func_cfg_out)
+    cleaning_func_cfg_out = struct('spike_dur', 0.1, 'iqr_thr', cfg.iqr_thr, 'f_c', 2);
+end
+if ~isfield(cleaning_func_cfg_out, 'spike_dur'), cleaning_func_cfg_out.spike_dur = 0.1; end
+if ~isfield(cleaning_func_cfg_out, 'iqr_thr'),   cleaning_func_cfg_out.iqr_thr   = cfg.iqr_thr; end
+
 %==========================================================================
 %% 5.  Build figure & controls
 %==========================================================================
 LP_W = 0.19;   % fractional figure width for left panel
 fig = figure( ...
-    'Name',          ['Artifact Annotator  |  sub-' cfg.sub '  |  task-' cfg.task], ...
+    'Name',          ['Artifact Annotator  |  ' bids_prefix], ...
     'NumberTitle',   'off', ...
     'Units',         'normalized', ...
     'OuterPosition', [0.01 0.03 0.98 0.94], ...
@@ -163,23 +273,20 @@ fig = figure( ...
     'WindowButtonMotionFcn', @btn_motion_cb, ...
     'WindowButtonUpFcn',     @btn_up_cb, ...
     'WindowKeyPressFcn',     @key_press_cb, ...
-    'WindowScrollWheelFcn',  @scroll_zoom_cb); % Interactive mouse wheel integration
+    'WindowScrollWheelFcn',  @scroll_zoom_cb);
 
 % ── Left panel ────────────────────────────────────────────────────────────
 lp = uipanel(fig, ...
     'Title','Controls','Units','normalized', ...
     'Position',[0 0 LP_W 1], ...
     'BackgroundColor',[0.87 0.87 0.87],'FontSize',9);
-% Stacking helpers
 ny_ = 0.985;  ch_ = 0.028;  dh_ = 0.032;
 
-% View mode Toggle (Single Button using HTML for diverse fonts)
 yp_ = ny_-ch_; ny_ = ny_-dh_;
 btn_view = uicontrol(lp,'Style','pushbutton', ...
     'Units','normalized','Position',[0.05 yp_ 0.90 ch_], ...
     'Callback',@(~,~) viewmode_cb());
 
-% Fixed Legend Control (Split into three text boxes to avoid HTML completely)
 yp_ = ny_-ch_; ny_ = ny_-dh_;
 uicontrol(lp,'Style','text','String','Black=Raw', ...
     'Units','normalized','Position',[0.02 yp_ 0.30 ch_], ...
@@ -194,14 +301,12 @@ uicontrol(lp,'Style','text','String','Red=Notched', ...
     'HorizontalAlignment','center','BackgroundColor',[0.87 0.87 0.87], ...
     'FontWeight','bold', 'ForegroundColor',[0.6 0 0]);
 
-% Display Sample Rate Sub-Legend Text Box
 yp_ = ny_-ch_; ny_ = ny_-dh_;
 txt_fs_display = uicontrol(lp,'Style','text','String','Sample Rate: -- Hz', ...
     'Units','normalized','Position',[0.05 yp_ 0.90 ch_], ...
     'HorizontalAlignment','left','BackgroundColor',[0.87 0.87 0.87], ...
     'FontWeight','bold', 'ForegroundColor','k');
 
-% Colormap Selector
 yp_ = ny_-ch_; ny_ = ny_-dh_;
 lbl_cmap = uicontrol(lp,'Style','text','String','Colormap:', ...
     'Units','normalized','Position',[0.05 yp_ 0.40 ch_], ...
@@ -209,7 +314,6 @@ lbl_cmap = uicontrol(lp,'Style','text','String','Colormap:', ...
 dd_cmap = uicontrol(lp,'Style','popupmenu','String',CMAPS, ...
     'Units','normalized','Position',[0.45 yp_ 0.50 ch_],'Callback',@cmap_cb);
 
-% Channel Visibility Configurations
 yp_ = ny_-ch_; ny_ = ny_-dh_;
 uicontrol(lp,'Style','text','String','N Visible Chans Raster:', ...
     'Units','normalized','Position',[0.05 yp_ 0.50 ch_], ...
@@ -225,9 +329,8 @@ ed_timecourse = uicontrol(lp,'Style','edit','String',num2str(cfg.n_chans_timecou
 yp_ = ny_-ch_; ny_ = ny_-dh_;
 uicontrol(lp,'Style','pushbutton','String','Update Chans', ...
     'Units','normalized','Position',[0.05 yp_ 0.90 ch_],'Callback',@update_chans_cb);
-ny_ = ny_ - 0.010;   % spacer
+ny_ = ny_ - 0.010;
 
-% Trace Scaling & Visibility Controls
 % RAW
 yp_ = ny_-ch_; ny_ = ny_-dh_;
 uicontrol(lp,'Style','text','String','Raw scale:', ...
@@ -269,7 +372,7 @@ uicontrol(lp,'Style','pushbutton','String','▼', ...
     'Units','normalized','Position',[0.70 yp_ 0.12 ch_],'Callback',@(~,~) scale_cb('notch', -0.25));
 btn_vis_notch = uicontrol(lp,'Style','pushbutton','String','✓', ...
     'Units','normalized','Position',[0.84 yp_ 0.12 ch_],'Callback',@toggle_vis_cb);
-ny_ = ny_ - 0.010;   % spacer
+ny_ = ny_ - 0.010;
 
 % Channel groups navigation
 yp_ = ny_-ch_; ny_ = ny_-dh_;
@@ -283,7 +386,7 @@ uicontrol(lp,'Style','pushbutton','String','▲', ...
     'Units','normalized','Position',[0.72 yp_ 0.10 ch_],'Callback',@chunk_prev_cb);
 uicontrol(lp,'Style','pushbutton','String','▼', ...
     'Units','normalized','Position',[0.84 yp_ 0.10 ch_],'Callback',@chunk_next_cb);
-ny_ = ny_ - 0.018;   % spacer
+ny_ = ny_ - 0.018;
 
 % Zoom controls
 yp_ = ny_-ch_; ny_ = ny_-dh_;
@@ -294,7 +397,7 @@ yp_ = ny_-ch_; ny_ = ny_-dh_;
 uicontrol(lp,'Style','pushbutton','String','Zoom full (w)', ...
     'Units','normalized','Position',[0.05 yp_ 0.90 ch_], ...
     'Callback',@zoom_full_cb);
-ny_ = ny_ - 0.018;   % spacer
+ny_ = ny_ - 0.018;
 
 % Artifact actions
 yp_ = ny_-ch_; ny_ = ny_-dh_;
@@ -304,7 +407,7 @@ uicontrol(lp,'Style','pushbutton','String','Add artifact (a)', ...
 yp_ = ny_-ch_; ny_ = ny_-dh_;
 uicontrol(lp,'Style','pushbutton','String','Remove selected artifact (r)', ...
     'Units','normalized','Position',[0.05 yp_ 0.90 ch_],'Callback',@remove_artifact_cb);
-ny_ = ny_ - 0.018;   % spacer
+ny_ = ny_ - 0.018;
 
 % File Saving / Loading
 yp_ = ny_-ch_; ny_ = ny_-dh_;
@@ -362,7 +465,6 @@ chk_manual_mask = uicontrol(pnl_clean,'Style','checkbox','String','Include masks
     'Units','normalized','Position',[0.52 0.04 0.45 0.18], ...
     'BackgroundColor',[0.87 0.87 0.87], 'Value', 0);
 
-% Data Selection Info Banner
 txt_sel_info = uicontrol(fig, 'Style','text', 'Units','normalized', ...
     'Position',[LP_W+0.04, 0.02, 0.6, 0.04], 'HorizontalAlignment','left', ...
     'BackgroundColor', [0.93 0.93 0.93], 'FontSize', 10, ...
@@ -375,13 +477,11 @@ ax = axes(fig,'Units','normalized', ...
 %==========================================================================
 %% 6.  Initialise display
 %==========================================================================
-% Auto-load existing artifacts if present
-annot_dir = fullfile('Y:\DBS','derivatives',['sub-' cfg.sub],'annot');
-auto_art_file = sprintf('sub-%s_ses-intraop_task-%s_artifact-manual.tsv', cfg.sub, cfg.task);
+auto_art_file = sprintf('%s_artifact-manual.tsv', bids_prefix);
 auto_art_path = fullfile(annot_dir, auto_art_file);
 if exist(auto_art_path, 'file')
     fprintf('  Auto-loading manual artifact file...\n');
-    load_artifact_file(auto_art_path);
+    load_artifact_file(auto_art_path, false);
 end
 
 update_viewmode_button();
@@ -391,6 +491,29 @@ update_plot();
 %==========================================================================
 %%   ═══════════  N E S T E D   F U N C T I O N S  ═══════════
 %==========================================================================
+
+% ── Convert NaN mask into [id, starts, ends, duration, label] rows ────────
+    function rows = nan_mask_to_artifact_rows(mask_mat, t_vec, labels, fs)
+        rows = mk_empty_table();
+        dt = 1 / fs;
+        n_smp = size(mask_mat, 2);
+        for c_i = 1:size(mask_mat, 1)
+            m_row = mask_mat(c_i, :);
+            if ~any(m_row), continue; end
+            d_m = diff([false, m_row, false]);
+            s_idx = find(d_m == 1);
+            e_idx = find(d_m == -1) - 1;
+            for k = 1:numel(s_idx)
+                t0 = t_vec(s_idx(k));
+                if e_idx(k) < n_smp
+                    t1 = t_vec(e_idx(k) + 1);
+                else
+                    t1 = t_vec(e_idx(k)) + dt;
+                end
+                rows = [rows; mk_row(0, t0, t1, labels{c_i})]; %#ok<AGROW>
+            end
+        end
+    end
 
 % ── Process Filtering (Clean + Notch) ─────────────────────────────────────
     function [cfg_out] = compute_processed_traces(is_init)
@@ -410,6 +533,7 @@ update_plot();
 
         try
             cfg_clean = struct();
+            cfg_clean.iqr_thr = cfg.iqr_thr;
             if ~is_init
                 cfg_clean.spike_dur = str2double(ed_spike_dur.String);
                 cfg_clean.iqr_thr = str2double(ed_iqr_thr.String);
@@ -422,19 +546,21 @@ update_plot();
                 end
             end
             
-            % 1. Cleaned & HPF
-            [D_cleaned_new, cfg_out] = hpf_and_instantaneous_artifact_mask(D, cfg_clean);
+            % 1. Cleaned & HPF (runs on zero-filled D_for_proc)
+            [D_cleaned_new, cfg_out] = hpf_and_instantaneous_artifact_mask(D_for_proc, cfg_clean);
             data_mat_clean = D_cleaned_new.trial{1};
-            % Safeguard against dimension transposition bugs
             if size(data_mat_clean, 2) < size(data_mat_clean, 1)
                 data_mat_clean = data_mat_clean';
             end
             
-            % 2. Notch Harmonics Filtering
-            cfg_notch_filt = [];
+            % 2. Notch Harmonics Filtering (clip frequencies above Nyquist for 250 Hz Percept data)
+            cfg_notch_filt = struct();
+            nyq = D_cleaned_new.fsample / 2;
+            default_harmonics = 60:60:480;
+            cfg_notch_filt.dftfreq = default_harmonics(default_harmonics < (nyq - 2));
+            
             [D_notched_new, ~] = notch_harmonics_filter(D_cleaned_new, cfg_notch_filt);
             data_mat_notch = D_notched_new.trial{1};
-            % Safeguard against dimension transposition bugs
             if size(data_mat_notch, 2) < size(data_mat_notch, 1)
                 data_mat_notch = data_mat_notch';
             end
@@ -453,11 +579,9 @@ update_plot();
         
         if ~is_init
             set(fig, 'pointer', 'arrow');
-            ed_spike_dur.String = num2str(cfg_out.spike_dur);
-            ed_iqr_thr.String = num2str(cfg_out.iqr_thr);
-            if isfield(cfg_out, 'f_c')
-                ed_fc.String = num2str(cfg_out.f_c);
-            end
+            if isfield(cfg_out, 'spike_dur'), ed_spike_dur.String = num2str(cfg_out.spike_dur); end
+            if isfield(cfg_out, 'iqr_thr'),   ed_iqr_thr.String   = num2str(cfg_out.iqr_thr);   end
+            if isfield(cfg_out, 'f_c'),       ed_fc.String        = num2str(cfg_out.f_c);       end
             update_plot();
         end
     end
@@ -606,7 +730,6 @@ update_plot();
             set(txt_fs_display, 'Visible', 'off');
             
             vis_data = double(data_mat(vis,:));
-            % Downsample Raster safely to prevent 1M+ column GPU crash
             n_samples = size(vis_data, 2);
             max_raster_pts = 4000;
             if n_samples > max_raster_pts
@@ -615,12 +738,11 @@ update_plot();
             end
             
             for i = 1:size(vis_data,1)
-                s = std(vis_data(i,:));
-                if s < eps('single'), s = 1; end
-                vis_data(i,:) = (vis_data(i,:) - mean(vis_data(i,:))) / s;
+                s = std(vis_data(i,:), 0, 2, 'omitnan');
+                if isnan(s) || s < eps('single'), s = 1; end
+                vis_data(i,:) = (vis_data(i,:) - mean(vis_data(i,:), 'omitnan')) / s;
             end
             
-            % Map raster spatially to X limit range instead of 1M+ element discrete array
             x_lims = [time_vec(1), time_vec(end)];
             imagesc(ax, x_lims, [1 n_vis], vis_data);
             colormap(ax, cur_cmap);
@@ -654,12 +776,10 @@ update_plot();
             set(dd_cmap, 'Visible','off');
             set(txt_fs_display, 'Visible', 'on');
             
-            % Compute original sample rate safely
             n_pts = numel(time_vec);
             dt = mean(diff(time_vec(1:min(1000, end))));
             orig_fs = 1 / dt;
             
-            % Downsample if rate exceeds the configured maximum limit
             if orig_fs > op.max_timecourse_sample_rate
                 ds = max(1, round(orig_fs / op.max_timecourse_sample_rate));
                 idx_ = 1:ds:n_pts;
@@ -669,7 +789,6 @@ update_plot();
                 display_fs = orig_fs;
             end
             
-            % Force mathematically strictly to 1xM row vectors
             t_d = time_vec(idx_);
             t_d = t_d(:)'; 
             
@@ -694,49 +813,44 @@ update_plot();
             end
             
             for ki = 1:n_vis
-                
-                % Process and plot Raw trace dynamically
                 if show_raw && ~isempty(data_mat)
                     len_raw = size(data_mat, 2);
                     idx_raw = idx_(idx_ <= len_raw);
                     if ~isempty(idx_raw)
                         sig = double(data_mat(vis(ki), idx_raw));
-                        sig = sig(:)'; % Force row vector
-                        s = std(sig);
-                        if s < eps('single'), s = 1; end
-                        sig_n = (sig - mean(sig)) ./ (6*s) * raw_scale_val + ki;
+                        sig = sig(:)';
+                        s = std(sig, 'omitnan');
+                        if isnan(s) || s < eps('single'), s = 1; end
+                        sig_n = (sig - mean(sig, 'omitnan')) ./ (6*s) * raw_scale_val + ki;
                         plot(ax, t_d(1:numel(idx_raw)), sig_n, 'Color','k', 'LineWidth',0.5);
                     end
                 end
                 
-                % Process and plot Clean trace dynamically
                 if show_clean && ~isempty(data_mat_clean)
                     len_clean = size(data_mat_clean, 2);
                     idx_clean = idx_(idx_ <= len_clean);
                     if ~isempty(idx_clean)
                         sig_clean = double(data_mat_clean(vis(ki), idx_clean));
-                        sig_clean = sig_clean(:)'; % Force row vector
-                        s_clean = std(sig_clean);
-                        if s_clean < eps('single'), s_clean = 1; end
-                        sig_clean_n = (sig_clean - mean(sig_clean)) ./ (6*s_clean) * clean_scale_val + ki;
+                        sig_clean = sig_clean(:)';
+                        s_clean = std(sig_clean, 'omitnan');
+                        if isnan(s_clean) || s_clean < eps('single'), s_clean = 1; end
+                        sig_clean_n = (sig_clean - mean(sig_clean, 'omitnan')) ./ (6*s_clean) * clean_scale_val + ki;
                         plot(ax, t_d(1:numel(idx_clean)), sig_clean_n, 'Color','b', 'LineWidth',0.5);
                     end
                 end
                 
-                % Process and plot Notch trace dynamically
                 if show_notch && ~isempty(data_mat_notch)
                     len_notch = size(data_mat_notch, 2);
                     idx_notch = idx_(idx_ <= len_notch);
                     if ~isempty(idx_notch)
                         sig_notch = double(data_mat_notch(vis(ki), idx_notch));
-                        sig_notch = sig_notch(:)'; % Force row vector
-                        s_notch = std(sig_notch);
-                        if s_notch < eps('single'), s_notch = 1; end
-                        sig_notch_n = (sig_notch - mean(sig_notch)) ./ (6*s_notch) * notch_scale_val + ki;
+                        sig_notch = sig_notch(:)';
+                        s_notch = std(sig_notch, 'omitnan');
+                        if isnan(s_notch) || s_notch < eps('single'), s_notch = 1; end
+                        sig_notch_n = (sig_notch - mean(sig_notch, 'omitnan')) ./ (6*s_notch) * notch_scale_val + ki;
                         plot(ax, t_d(1:numel(idx_notch)), sig_notch_n, 'Color',[0.6 0 0], 'LineWidth',0.5);
                     end
                 end
-                
             end
         end
 
@@ -837,7 +951,6 @@ update_plot();
     end
 
     function update_viewmode_button()
-        % Uses HTML to independently format both strings on the same button
         if strcmp(viewmode, 'timecourse')
             str = '<html><font color="#008000" size="5"><b>TIMECOURSE</b></font><font color="#000000" size="3"> // raster (m)</font></html>';
         else
@@ -967,7 +1080,7 @@ update_plot();
         rows=sels_to_rows(SEL);
         SEL=struct('t_start',{},'t_end',{},'ch_start',{},'ch_end',{});
         if height(rows)==0, update_plot(); return; end
-        combine_artifact_tables(rows);
+        combine_artifact_tables(rows, true);
     end
 
     function rows=sels_to_rows(sels)
@@ -975,7 +1088,7 @@ update_plot();
         for si=1:numel(sels)
             s=sels(si);
             for gi=s.ch_start:s.ch_end
-                rows=[rows; mk_row(0,s.t_start,s.t_end,ch_labels{gi})]; 
+                rows=[rows; mk_row(0,s.t_start,s.t_end,ch_labels{gi})]; %#ok<AGROW>
             end
         end
     end
@@ -1013,7 +1126,7 @@ update_plot();
         for ai=1:height(artifact)
             gi=lbl2idx(artifact.label(ai));
             if ~aff(ai)||isempty(gi)
-                new_art=[new_art; artifact(ai,:)]; 
+                new_art=[new_art; artifact(ai,:)]; %#ok<AGROW>
                 continue;
             end
             ivs=[artifact.starts(ai), artifact.ends(ai)];
@@ -1025,7 +1138,7 @@ update_plot();
             end
             for ri=1:size(ivs,1)
                 if ivs(ri,2)-ivs(ri,1)>1e-10
-                    new_art=[new_art; mk_row(0,ivs(ri,1),ivs(ri,2),ch_labels{gi})]; 
+                    new_art=[new_art; mk_row(0,ivs(ri,1),ivs(ri,2),ch_labels{gi})]; %#ok<AGROW>
                 end
             end
         end
@@ -1038,11 +1151,11 @@ update_plot();
         out=zeros(0,2);
         for k=1:size(ivs,1)
             a=ivs(k,1); b=ivs(k,2);
-            if     rm_e<=a||rm_s>=b,       out(end+1,:)=[a,b];        
+            if     rm_e<=a||rm_s>=b,       out(end+1,:)=[a,b];        %#ok<AGROW>
             elseif rm_s<=a&&rm_e>=b,       
-            elseif rm_s<=a,                out(end+1,:)=[rm_e,b];     
-            elseif rm_e>=b,                out(end+1,:)=[a,rm_s];     
-            else, out(end+1,:)=[a,rm_s]; out(end+1,:)=[rm_e,b];       
+            elseif rm_s<=a,                out(end+1,:)=[rm_e,b];     %#ok<AGROW>
+            elseif rm_e>=b,                out(end+1,:)=[a,rm_s];     %#ok<AGROW>
+            else, out(end+1,:)=[a,rm_s]; out(end+1,:)=[rm_e,b];       %#ok<AGROW>
             end
         end
     end
@@ -1071,14 +1184,15 @@ update_plot();
                     cur=q(1); q(1)=[];
                     if visited(cur), continue; end
                     visited(cur)=true;
-                    q=[q, find(adj(cur,:)&~visited')]; 
+                    q=[q, find(adj(cur,:)&~visited')]; %#ok<AGROW>
                 end
             end
         end
         result=n_comp>1;
     end
 
-    function combine_artifact_tables(new_rows)
+    function combine_artifact_tables(new_rows, do_plot)
+        if nargin < 2, do_plot = true; end
         artifact=[artifact; new_rows];
         u_lbls=unique(artifact.label);
         merged=mk_empty_table();
@@ -1090,20 +1204,23 @@ update_plot();
                 if sub_t.starts(ri)<=me+1e-10
                     me=max(me,sub_t.ends(ri));
                 else
-                    merged=[merged; mk_row(0,ms,me,char(lbl))]; 
+                    merged=[merged; mk_row(0,ms,me,char(lbl))]; %#ok<AGROW>
                     ms=sub_t.starts(ri); me=sub_t.ends(ri);
                 end
             end
-            merged=[merged; mk_row(0,ms,me,char(lbl))]; 
+            merged=[merged; mk_row(0,ms,me,char(lbl))]; %#ok<AGROW>
         end
         merged   =sortrows(merged,{'starts','label'});
         merged.id=(1:height(merged))';
         artifact =merged;
-        update_plot();
+        if do_plot
+            update_plot();
+        end
     end
 
 % ── Load Artifact File Master ─────────────────────────────────────────────
-    function load_artifact_file(fpath)
+    function load_artifact_file(fpath, do_plot)
+        if nargin < 2, do_plot = true; end
         try
             al = readtable(fpath, 'FileType','text','Delimiter','\t','TextType','string');
             probs = validate_art_table(al);
@@ -1118,7 +1235,7 @@ update_plot();
             al.label=string(al.label);
             al.id   =zeros(height(al),1,'double');
             al=al(:,{'id','starts','ends','duration','label'});
-            combine_artifact_tables(al);
+            combine_artifact_tables(al, do_plot);
         catch ME
             errordlg(sprintf('Cannot read file:\n%s',ME.message),'Load Error');
         end
@@ -1132,7 +1249,7 @@ update_plot();
                 'Load Artifact Mask','Yes','No','Yes');
             if isempty(btn)||strcmp(btn,'No'), return; end
         end
-        annot_dir=fullfile('Y:\DBS','derivatives',['sub-' cfg.sub],'annot');
+        if exist(annot_dir, 'dir') ~= 7, mkdir(annot_dir); end
         [fname,fdir]=uigetfile( ...
             {'*artifact*.tsv','Artifact TSV (*artifact*.tsv)'; ...
              '*.tsv',         'All TSV (*.tsv)'}, ...
@@ -1150,7 +1267,7 @@ update_plot();
             end
         end
 
-        load_artifact_file(fullfile(fdir, fname));
+        load_artifact_file(fullfile(fdir, fname), true);
     end
 
     function probs=validate_art_table(T)
@@ -1191,8 +1308,8 @@ update_plot();
 
 % ── Save Artifact Mask ────────────────────────────────────────────────────
     function save_artifact_cb(~,~)
-        annot_dir   =fullfile('Y:\DBS','derivatives',['sub-' cfg.sub],'annot');
-        default_name=sprintf('sub-%s_ses-intraop_task-%s_artifact-manual.tsv',cfg.sub,cfg.task);
+        if exist(annot_dir, 'dir') ~= 7, mkdir(annot_dir); end
+        default_name = sprintf('%s_artifact-manual.tsv', bids_prefix);
         [fname,fdir]=uiputfile({'*.tsv','Tab-separated values (*.tsv)'}, ...
             'Save Artifact Mask',fullfile(annot_dir,default_name));
         if isequal(fname,0), return; end
